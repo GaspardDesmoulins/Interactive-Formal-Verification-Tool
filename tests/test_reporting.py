@@ -40,6 +40,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn('P1 [accepted] "x > 0"', report)
         self.assertIn('source answer: "U2"', report)
         self.assertIn("verification: not performed", report)
+        self.assertIn("LLM context completeness is not independently verified", report)
         self.assertIn("Verification results: none", report)
         self.assertEqual(self.run_cli("report", str(self.state))[1], report)
 

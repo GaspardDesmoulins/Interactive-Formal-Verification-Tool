@@ -71,7 +71,7 @@ class OllamaTests(unittest.TestCase):
             build_opener.return_value.open.return_value = self.response()
             result, output, error = self.run_cli("propose-ollama", str(self.state))
         self.assertEqual(result, 0)
-        self.assertEqual(error, "")
+        self.assertIn("context completeness is not independently verified", error)
         self.assertIn("1 candidate properties and 1 unknowns", output)
         request = build_opener.return_value.open.call_args.args[0]
         self.assertEqual(request.full_url, ENDPOINT)
@@ -80,6 +80,9 @@ class OllamaTests(unittest.TestCase):
         self.assertNotIn("maxItems", payload["format"]["properties"]["properties"])
         self.assertFalse(payload["think"])
         self.assertFalse(payload["stream"])
+        self.assertFalse(payload["truncate"])
+        self.assertFalse(payload["shift"])
+        self.assertNotIn("num_ctx", payload["options"])
         self.assertEqual(payload["options"]["num_predict"], 1400)
         context = json.loads(payload["messages"][1]["content"])
         self.assertEqual(context["functions"][0]["source"], "def f(x):\n    return math.sqrt(x)")
@@ -97,7 +100,8 @@ class OllamaTests(unittest.TestCase):
             result, _, error = self.run_cli(
                 "propose-ollama", str(self.state), "--model", "qwen3.5:9b"
             )
-        self.assertEqual((result, error), (0, ""))
+        self.assertEqual(result, 0)
+        self.assertIn("context completeness is not independently verified", error)
         request = builder.return_value.open.call_args.args[0]
         payload = json.loads(request.data)
         self.assertEqual(payload["model"], "qwen3.5:9b")
@@ -125,7 +129,8 @@ class OllamaTests(unittest.TestCase):
             result, output, error = self.run_cli(
                 "propose-ollama", str(self.state), "--model", "qwen3.5:9b"
             )
-        self.assertEqual((result, error), (0, ""))
+        self.assertEqual(result, 0)
+        self.assertIn("context completeness is not independently verified", error)
         self.assertIn("1 candidate properties and 0 unknowns", output)
         self.assertIn("Skipped exact unknown proposal #1; matches U3.", output)
         state = load(self.state)
@@ -185,7 +190,8 @@ class OllamaTests(unittest.TestCase):
             result, _, error = self.run_cli(
                 "propose-ollama", str(self.state), "--model", "qwen3.5:9b"
             )
-        self.assertEqual((result, error), (0, ""))
+        self.assertEqual(result, 0)
+        self.assertIn("context completeness is not independently verified", error)
         self.assertEqual(load(self.state)["properties"][0]["statement"], statement)
 
     def test_selected_model_rejects_function_code_as_property(self) -> None:
@@ -252,7 +258,8 @@ class OllamaTests(unittest.TestCase):
         with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
             builder.return_value.open.return_value = self.response()
             result, output, error = self.run_cli("propose-ollama", str(self.state))
-        self.assertEqual((result, error), (0, ""))
+        self.assertEqual(result, 0)
+        self.assertIn("context completeness is not independently verified", error)
         self.assertIn("1 candidate properties and 0 unknowns", output)
         self.assertIn("Skipped exact unknown proposal #1; matches U1.", output)
         state = load(self.state)
@@ -270,7 +277,47 @@ class OllamaTests(unittest.TestCase):
             result, _, error = self.run_cli("propose-ollama", str(self.state), option, "0")
             self.assertEqual(result, 1)
             self.assertIn("must be positive", error)
+        for value in ("0", "-1"):
+            result, _, error = self.run_cli(
+                "propose-ollama", str(self.state), "--context-tokens", value
+            )
+            self.assertEqual(result, 1)
+            self.assertIn("context token budget must be a positive integer", error)
         self.assertEqual(self.state.read_bytes(), original)
+
+    def test_explicit_context_budget_is_forwarded_to_server(self) -> None:
+        with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
+            builder.return_value.open.return_value = self.response()
+            result, _, error = self.run_cli(
+                "propose-ollama", str(self.state), "--context-tokens", "512"
+            )
+        self.assertEqual(result, 0)
+        self.assertIn("context completeness is not independently verified", error)
+        request = builder.return_value.open.call_args.args[0]
+        self.assertEqual(json.loads(request.data)["options"]["num_ctx"], 512)
+        with self.assertRaisesRegex(ValueError, "context token budget"):
+            OllamaProvider(context_tokens=True)
+
+    def test_http_error_is_bounded_escaped_and_preserves_state(self) -> None:
+        original = self.state.read_bytes()
+        bodies = (
+            (json.dumps({"error": "context length exceeded\nforged line"}).encode(),
+             'context length exceeded\\nforged line'),
+            (b"not json", "invalid server error response"),
+            (b"x" * 4097, "server error details exceed the allowed size"),
+            (b"", "no readable server error details"),
+        )
+        for body, expected in bodies:
+            with self.subTest(expected=expected):
+                response = urllib.error.HTTPError(ENDPOINT, 400, "Bad Request", {}, io.BytesIO(body))
+                with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
+                    builder.return_value.open.side_effect = response
+                    result, _, error = self.run_cli("propose-ollama", str(self.state))
+                self.assertEqual(result, 1)
+                self.assertIn("Ollama returned HTTP 400", error)
+                self.assertIn(expected, error)
+                self.assertNotIn("\nforged line", error)
+                self.assertEqual(self.state.read_bytes(), original)
 
     def test_redirect_is_rejected(self) -> None:
         request = urllib.request.Request(ENDPOINT)

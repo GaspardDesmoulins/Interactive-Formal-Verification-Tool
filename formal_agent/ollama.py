@@ -24,6 +24,7 @@ QWEN_TEXT_MAX = 240
 ENDPOINT = "http://127.0.0.1:11434/api/chat"
 MAX_INPUT_BYTES = 65536
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_ERROR_BYTES = 4096
 
 PROPERTY_SCHEMA = {
     "type": "object",
@@ -82,15 +83,19 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 class OllamaProvider:
     def __init__(
-        self, timeout: int = 300, max_tokens: int = 1400, model: str = MODEL
+        self, timeout: int = 300, max_tokens: int = 1400, model: str = MODEL,
+        context_tokens: int | None = None,
     ) -> None:
         if timeout <= 0 or max_tokens <= 0:
             raise ValueError("Ollama timeout and token budget must be positive.")
+        if context_tokens is not None and (type(context_tokens) is not int or context_tokens <= 0):
+            raise ValueError("Ollama context token budget must be a positive integer.")
         if model not in SUPPORTED_MODELS:
             raise ValueError(f"Unsupported Ollama model {model!r}; choose from {SUPPORTED_MODELS}.")
         self.timeout = timeout
         self.max_tokens = max_tokens
         self.model = model
+        self.context_tokens = context_tokens
 
     def propose(self, model: dict[str, Any]) -> Any:
         source_bytes = Path(model["source"]).read_bytes()
@@ -144,12 +149,17 @@ class OllamaProvider:
                 "Keep each statement, description, question and impact under 20 words "
                 f"and under {QWEN_TEXT_MAX} characters."
             )
+        options = {"temperature": 0, "num_predict": self.max_tokens}
+        if self.context_tokens is not None:
+            options["num_ctx"] = self.context_tokens
         payload = {
             "model": self.model,
             "stream": False,
             "think": False,
+            "truncate": False,
+            "shift": False,
             "format": schema,
-            "options": {"temperature": 0, "num_predict": self.max_tokens},
+            "options": options,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": context},
@@ -166,9 +176,21 @@ class OllamaProvider:
             with opener.open(request, timeout=self.timeout) as response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as error:
-            raise ValueError(
-                f"Ollama returned HTTP {error.code}; check the local server and model."
-            ) from error
+            raw_error = error.read(MAX_ERROR_BYTES + 1)
+            detail = "no readable server error details"
+            if len(raw_error) > MAX_ERROR_BYTES:
+                detail = "server error details exceed the allowed size"
+            elif raw_error:
+                try:
+                    error_data = json.loads(raw_error)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    detail = "invalid server error response"
+                else:
+                    if isinstance(error_data, dict) and isinstance(error_data.get("error"), str):
+                        detail = json.dumps(error_data["error"], ensure_ascii=True)
+                    else:
+                        detail = "invalid server error response"
+            raise ValueError(f"Ollama returned HTTP {error.code}: {detail}.") from error
         except urllib.error.URLError as error:
             raise ValueError(f"Cannot reach local Ollama: {error.reason}") from error
         except TimeoutError as error:

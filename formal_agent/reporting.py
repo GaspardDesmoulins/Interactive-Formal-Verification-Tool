@@ -28,6 +28,7 @@ def render_report(state: dict[str, Any]) -> str:
         "- No target code was executed; methods and nested function bodies are not analyzed.",
         "- No verification engine or tests of the target were run.",
         "- Accepted properties are specifications, not proofs.",
+        "- LLM context completeness is not independently verified; servers may truncate inputs.",
         "",
         f"Module imports ({len(model.get('imports', []))})",
     ]

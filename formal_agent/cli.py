@@ -95,6 +95,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     ollama.add_argument("--timeout", type=int, default=300, help="Timeout in seconds (default: 300)")
     ollama.add_argument("--max-tokens", type=int, default=1400, help="Output token budget (default: 1400)")
+    ollama.add_argument(
+        "--context-tokens", type=int, help="Request a context window size in tokens from Ollama"
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -205,7 +208,8 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 require_active(state)
                 provider = OllamaProvider(
-                    timeout=args.timeout, max_tokens=args.max_tokens, model=args.model
+                    timeout=args.timeout, max_tokens=args.max_tokens, model=args.model,
+                    context_tokens=args.context_tokens,
                 )
                 proposal_result = apply_proposals(state, provider, f"ollama:{provider.model}")
                 message = (
@@ -234,6 +238,12 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 if not changed:
                     print("No new proposals; investigation unchanged.")
+            if args.command == "propose-ollama":
+                print(
+                    "Warning: Ollama context completeness is not independently verified; "
+                    "server support for truncation controls is not checked.",
+                    file=sys.stderr,
+                )
     except (OSError, UnicodeError, SyntaxError, ValueError, EOFError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

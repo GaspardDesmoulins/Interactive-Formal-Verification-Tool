@@ -87,6 +87,7 @@ class EndToEndTests(unittest.TestCase):
                 cwd=ROOT, capture_output=True, text=True, timeout=30,
             )
             self.assertEqual(fake.returncode, 0, fake.stderr)
+            self.assertIn("context completeness is not independently verified", fake.stderr)
             self.assertIn("1 candidate properties and 1 unknowns", fake.stdout)
             snapshot = json.loads(success("show", str(state)))
             self.assertEqual(snapshot["properties"][0]["status"], "candidate")
