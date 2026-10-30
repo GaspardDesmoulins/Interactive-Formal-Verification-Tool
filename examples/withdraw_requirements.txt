@@ -1,0 +1,2 @@
+Withdrawal amounts must be strictly positive.
+Withdrawals greater than the balance must be rejected.
