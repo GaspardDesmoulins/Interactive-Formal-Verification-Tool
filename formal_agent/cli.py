@@ -10,6 +10,7 @@ from formal_agent.assumptions import add_assumption, link_property
 from formal_agent.conflicts import record_conflict, resolve_conflict
 from formal_agent.duplicates import answered_question_matches, mark_duplicate, reopen_duplicate
 from formal_agent.evidence import capture_evidence, discover_evidence, reference_at_line
+from formal_agent.execution_policy import BUDGET_BOUNDS, ExecutionBudget, execution_readiness
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
 from formal_agent.ollama import MODEL, SUPPORTED_MODELS, OllamaProvider
 from formal_agent.properties import accept_property, add_property
@@ -128,6 +129,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     static_calls.add_argument("state", type=Path)
     static_calls.add_argument("property_id")
+    readiness = commands.add_parser(
+        "execution-readiness", help="Inspect a blocked test request without running it",
+        description=(
+            "Preview only: no isolation checks or tests run. Host memory must exceed "
+            "guest memory by at least 128 MiB."
+        ),
+    )
+    budget_defaults = ExecutionBudget()
+    readiness.add_argument("state", type=Path)
+    readiness.add_argument("scenario_id")
+    for field, (minimum, maximum) in BUDGET_BOUNDS.items():
+        default = getattr(budget_defaults, field)
+        readiness.add_argument(
+            "--" + field.replace("_", "-"), type=int, default=default,
+            help=f"Requested {field}: {minimum}..{maximum} (default {default}); not enforced",
+        )
     propose = commands.add_parser("import-proposals", help="Import untrusted LLM proposals")
     propose.add_argument("state", type=Path)
     propose.add_argument("proposals", type=Path)
@@ -166,6 +183,19 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(state, ensure_ascii=False, indent=2))
         elif args.command == "report":
             print(render_report(load(args.state)), end="")
+        elif args.command == "execution-readiness":
+            state, revision = load_snapshot(args.state)
+            budget = ExecutionBudget(
+                wall_seconds=args.wall_seconds, cpu_seconds=args.cpu_seconds, vcpus=args.vcpus,
+                guest_memory_mib=args.guest_memory_mib, host_memory_mib=args.host_memory_mib,
+                storage_mib=args.storage_mib, output_kib=args.output_kib, host_pids=args.host_pids,
+            )
+            result = execution_readiness(state, revision, args.scenario_id, budget)
+            if load_snapshot(args.state)[1] != revision:
+                raise ValueError("Investigation changed while checking readiness; retry.")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print("Execution blocked; no isolation checks or tests were run.", file=sys.stderr)
+            return 1
         else:
             state, revision = load_snapshot(args.state)
             changed = True

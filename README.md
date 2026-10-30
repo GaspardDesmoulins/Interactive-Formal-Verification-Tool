@@ -87,6 +87,12 @@ Le rapport relie ces observations aux propriétés concernées. Pour les suggest
 
 Toutes les références Python déclarées doivent être analysables : l'absence de référence Python ou une erreur de syntaxe bloque la commande sans modification de l'état. Elle refuse également plus de 200 appels homonymes, plus de 64 arguments par appel ou une expression observée de plus de 512 caractères ; elle ne tronque pas silencieusement les résultats. Si la source ou une référence change, l'analyse reste consultable avec un avertissement, mais aucune nouvelle analyse n'est enregistrée.
 
+### Préparer une future exécution isolée
+
+`python -m formal_agent execution-readiness investigation.json S1` inspecte une demande associée à un scénario existant, **sans exécuter de test ni sonder le confinement**. Elle affiche un objet JSON avec la révision de l'investigation, les empreintes, les budgets demandés et les blocages, puis renvoie actuellement le code de sortie `1` : aucun backend isolé ni ensemble de tests exécutable n'est encore disponible. Si la source ou une référence a changé, elle signale aussi cet état comme blocage. Cette inspection ne modifie pas l'investigation et ne constitue pas une autorisation d'exécuter.
+
+Les limites acceptées et leurs défauts sont documentés dans [l'ADR 0002](docs/decisions/0002-isolated-test-execution.md) ; les options de la commande permettent de demander des valeurs dans ces bornes. Ces budgets ne sont pas encore appliqués à une exécution réelle. L'ADR définit le modèle de menace, le backend microVM envisagé, les refus obligatoires et les tests à réussir avant toute activation. Sur cette machine, WSL n'est pas qualifié pour ce backend.
+
 `report` produit un rapport textuel déterministe sur les fonctions, imports, appels et lignes observés, les questions, réponses, propriétés, hypothèses, scénarios, évaluations et leurs limites ; il indique qu'aucune vérification du code cible n'a été effectuée. Les docstrings et les références sont indiquées comme non vérifiées. `show` conserve la sortie JSON complète.
 
 ### Générer des propositions avec Ollama
