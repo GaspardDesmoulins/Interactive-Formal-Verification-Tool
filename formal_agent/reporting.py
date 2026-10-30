@@ -41,6 +41,7 @@ def render_report(state: dict[str, Any]) -> str:
             f"- {quote(unknown['id'])} [{unknown['status']}] "
             f"{quote(unknown['function'])}:{unknown['line']}"
         )
+        lines.append(f"  Origin: {quote(unknown['origin'])}")
         lines.append(f"  Question: {quote(unknown['question'])}")
         if unknown["status"] == "answered":
             lines.append(f"  User answer: {quote(unknown['answer'])}")
@@ -52,9 +53,16 @@ def render_report(state: dict[str, Any]) -> str:
             f"- {property_item['id']} [{property_item['status']}] "
             f"{quote(property_item['statement'])}"
         )
-        lines.append(
-            f"  Origin: user; source answer: {quote(property_item['source_unknown_id'])}"
-        )
+        if property_item["origin"] == "user":
+            lines.append(
+                f"  Origin: user; source answer: {quote(property_item['source_unknown_id'])}"
+            )
+        else:
+            function = property_item["source_function"]
+            lines.append(
+                f"  Origin: LLM proposal; reasoner: {quote(property_item['reasoner'])}; "
+                f"source: {quote(function['name'])}:{function['line']}"
+            )
         if property_item["status"] == "accepted":
             lines.append("  Accepted by: user; verification: not performed")
         else:

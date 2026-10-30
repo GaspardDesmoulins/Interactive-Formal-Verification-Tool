@@ -8,6 +8,7 @@ from pathlib import Path
 from formal_agent.analysis import analyze
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
 from formal_agent.properties import accept_property, add_property
+from formal_agent.reasoning import JsonFileProvider, apply_proposals
 from formal_agent.reporting import render_report
 from formal_agent.storage import create, load, save
 
@@ -33,6 +34,10 @@ def main(argv: list[str] | None = None) -> int:
     accept = commands.add_parser("accept-property", help="Accept a candidate specification")
     accept.add_argument("state", type=Path)
     accept.add_argument("property_id")
+    propose = commands.add_parser("import-proposals", help="Import untrusted LLM proposals")
+    propose.add_argument("state", type=Path)
+    propose.add_argument("proposals", type=Path)
+    propose.add_argument("--reasoner", required=True, help="Name of the proposal provider")
     args = parser.parse_args(argv)
 
     try:
@@ -70,9 +75,12 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command == "add-property":
                 property_id = add_property(state, args.unknown_id, args.statement)
                 message = f"Candidate property {property_id} recorded."
-            else:
+            elif args.command == "accept-property":
                 accept_property(state, args.property_id)
                 message = f"Property {args.property_id} accepted as a specification, not proved."
+            else:
+                counts = apply_proposals(state, JsonFileProvider(args.proposals), args.reasoner)
+                message = f"Imported {counts[0]} candidate properties and {counts[1]} unknowns."
             warning = source_warning(state)
             if warning:
                 raise ValueError(f"{warning}. Changes were not saved; start a new investigation.")

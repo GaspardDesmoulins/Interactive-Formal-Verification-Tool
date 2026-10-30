@@ -21,7 +21,7 @@ def validate(state: Any) -> None:
     if (
         not isinstance(state, dict)
         or type(state.get("schema_version")) is not int
-        or state["schema_version"] not in (1, 2)
+        or state["schema_version"] not in (1, 2, 3)
     ):
         raise ValueError("Invalid or unsupported investigation schema.")
     model = state.get("model")
@@ -112,14 +112,34 @@ def validate(state: Any) -> None:
             or not isinstance(statement, str)
             or not statement.strip()
             or status not in ("candidate", "accepted")
-            or property_item.get("origin") != "user"
-            or not isinstance(source_id, str)
-            or source_id not in unknowns_by_id
-            or unknowns_by_id[source_id]["status"] != "answered"
             or "accepted_by" not in property_item
             or (status == "candidate" and property_item.get("accepted_by") is not None)
             or (status == "accepted" and property_item.get("accepted_by") != "user")
         ):
+            raise ValueError("Invalid property or provenance.")
+        if property_item.get("origin") == "user":
+            if (
+                not isinstance(source_id, str)
+                or source_id not in unknowns_by_id
+                or unknowns_by_id[source_id]["status"] != "answered"
+            ):
+                raise ValueError("Invalid property or provenance.")
+        elif property_item.get("origin") == "llm" and state["schema_version"] == 3:
+            function = property_item.get("source_function")
+            reasoner = property_item.get("reasoner")
+            if (
+                not isinstance(function, dict)
+                or not isinstance(function.get("name"), str)
+                or type(function.get("line")) is not int
+                or not any(
+                    item["name"] == function["name"] and item["line"] == function["line"]
+                    for item in model["functions"]
+                )
+                or not isinstance(reasoner, str)
+                or not reasoner.strip()
+            ):
+                raise ValueError("Invalid property or provenance.")
+        else:
             raise ValueError("Invalid property or provenance.")
         property_ids.add(property_id)
 
@@ -131,6 +151,8 @@ def load(path: Path) -> dict[str, Any]:
     if state["schema_version"] == 1:
         state["schema_version"] = 2
         state["properties"] = []
+    if state["schema_version"] == 2:
+        state["schema_version"] = 3
     return state
 
 

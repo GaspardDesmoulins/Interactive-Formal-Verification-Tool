@@ -4,7 +4,7 @@ Interactive Formal Verification Tool est un projet open source visant à aider l
 
 Le projet ne promet ni de découvrir toutes les défaillances, ni de démontrer automatiquement la correction d'un système. Sa valeur ajoutée est une **investigation interactive pilotée par les incertitudes** : le LLM détermine ce qu'il ne sait pas, recherche les informations disponibles, interroge l'utilisateur lorsque c'est nécessaire et transforme progressivement les réponses en propriétés et obligations de preuve vérifiables.
 
-**État du projet :** une première tranche expérimentale analyse statiquement les fonctions Python de premier niveau, enregistre les réponses à des questions sur leur comportement et leurs paramètres et permet de proposer puis d'accepter explicitement des propriétés. Le reste des fonctionnalités, interfaces et intégrations décrites ci-dessous reste à réaliser. L'analyse de raisonnements textuels fait partie de la vision, mais son périmètre et ses méthodes restent à définir.
+**État du projet :** une première tranche expérimentale analyse statiquement les fonctions Python de premier niveau, enregistre les réponses à des questions, importe des propositions structurées et permet d'accepter explicitement des propriétés. Aucun fournisseur de LLM n'est intégré : les propositions sont encore préparées séparément. Le reste des fonctionnalités, interfaces et intégrations décrites ci-dessous reste à réaliser. L'analyse de raisonnements textuels fait partie de la vision, mais son périmètre et ses méthodes restent à définir.
 
 ## Premiers pas
 
@@ -27,11 +27,37 @@ Une fois une question répondue, `add-property` enregistre une propriété candi
 
 `report` produit un rapport textuel déterministe sur les fonctions, les questions, les réponses, les propriétés et leurs limites ; il indique qu'aucune vérification du code cible n'a été effectuée. `show` conserve la sortie JSON complète.
 
+### Importer des propositions
+
+Un LLM ou un autre outil externe peut préparer localement un fichier JSON de propositions. La commande `python -m formal_agent import-proposals investigation.json propositions.json --reasoner "nom-du-modele"` vérifie sa structure et l'enregistre sans l'exécuter. Utilisez l'empreinte `model.sha256` et les noms et lignes de fonctions visibles avec `show` :
+
+```json
+{
+  "source_sha256": "<empreinte de la source analysee>",
+  "properties": [
+    {"function": "withdraw", "line": 1, "statement": "Le montant est positif"}
+  ],
+  "unknowns": [
+    {
+      "function": "withdraw",
+      "line": 1,
+      "description": "Le traitement des montants negatifs est inconnu.",
+      "question": "Les montants negatifs doivent-ils etre refuses ?",
+      "impact": "Le domaine des entrees reste a preciser."
+    }
+  ]
+}
+```
+
+Les deux tableaux sont obligatoires, mais l'un d'eux peut être vide. Toute proposition doit concerner une fonction du modèle et la même empreinte source ; les doublons sont refusés. Les propriétés restent candidates, les inconnues restent ouvertes et leur origine est indiquée dans l'investigation. La structure valide ou le nom du fournisseur ne prouvent ni que les propositions viennent réellement d'un LLM ni qu'elles sont correctes : elles doivent être examinées par l'utilisateur. L'interface Python `ReasoningProvider` permet de brancher un fournisseur ; aucun appel réseau ni génération par LLM n'est effectué par l'import JSON.
+
+Le code, les docstrings et les réponses du fournisseur sont des données non fiables. Une intégration future doit isoler les instructions des données et ne pas suivre les instructions trouvées dans les sources ; la validation de structure seule ne garantit pas l'absence d'injections ou d'erreurs de raisonnement.
+
 Une investigation est un instantané : `show` avertit si la source a changé ou n'est plus accessible, et `report` indique l'état de la source, tout en permettant de consulter l'état sauvegardé. Dans ces cas, les commandes qui modifient l'investigation refusent de l'enregistrer. Il faut créer une nouvelle investigation ; le transfert des réponses vers une nouvelle version du code n'est pas encore pris en charge.
 
 Sous Windows avec WSL et Python 3, les mêmes commandes peuvent être lancées depuis la racine du dépôt en remplaçant `python` par `wsl python3`.
 
-L'analyse utilise l'AST sans importer ni exécuter le fichier. Elle extrait les fonctions de premier niveau, leurs paramètres, les appels syntaxiques, les imports explicites au niveau du module et dans chaque fonction, ainsi que les lignes de `return` et `raise`, sans explorer les corps de fonctions ou classes imbriquées. Les imports et appels sont des observations syntaxiques : leur présence ne garantit pas leur exécution et ils ne constituent pas un graphe de dépendances résolu. L'analyse ne résout pas les appels dynamiques et ne couvre pas encore les méthodes, la génération automatique de propriétés, les scénarios, les tests du code analysé, les LLM ou les preuves formelles. Les questions sur le comportement et chaque paramètre ne tiennent pas encore compte des réponses présentes dans les autres sources. Une réponse enregistrée ne constitue pas une spécification validée.
+L'analyse utilise l'AST sans importer ni exécuter le fichier. Elle extrait les fonctions de premier niveau, leurs paramètres, les appels syntaxiques, les imports explicites au niveau du module et dans chaque fonction, ainsi que les lignes de `return` et `raise`, sans explorer les corps de fonctions ou classes imbriquées. Les imports et appels sont des observations syntaxiques : leur présence ne garantit pas leur exécution et ils ne constituent pas un graphe de dépendances résolu. L'analyse ne résout pas les appels dynamiques et ne couvre pas encore les méthodes, la génération automatique de propriétés, les scénarios, les tests du code analysé, les appels à un LLM ou les preuves formelles. Les questions sur le comportement et chaque paramètre ne tiennent pas encore compte des réponses présentes dans les autres sources. Une réponse enregistrée ne constitue pas une spécification validée.
 
 Les choix et prochaines étapes de cette tranche sont documentés dans [l'ADR 0001](docs/decisions/0001-first-investigation-slice.md).
 
