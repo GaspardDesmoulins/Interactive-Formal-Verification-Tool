@@ -116,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
             print(render_report(load(args.state)), end="")
         else:
             state, revision = load_snapshot(args.state)
+            changed = True
+            proposal_result = None
             warning = source_warning(state)
             if warning:
                 raise ValueError(f"{warning}. Start a new investigation.")
@@ -191,18 +193,41 @@ def main(argv: list[str] | None = None) -> int:
                 message = f"Assumption {assumption_id} recorded; it has not been verified."
             elif args.command == "import-proposals":
                 require_active(state)
-                counts = apply_proposals(state, JsonFileProvider(args.proposals), args.reasoner)
-                message = f"Imported {counts[0]} candidate properties and {counts[1]} unknowns."
+                proposal_result = apply_proposals(state, JsonFileProvider(args.proposals), args.reasoner)
+                message = (
+                    f"Imported {proposal_result.properties_added} candidate properties "
+                    f"and {proposal_result.unknowns_added} unknowns."
+                )
             else:
                 require_active(state)
                 provider = OllamaProvider(timeout=args.timeout, max_tokens=args.max_tokens)
-                counts = apply_proposals(state, provider, f"ollama:{MODEL}")
-                message = f"Generated {counts[0]} candidate properties and {counts[1]} unknowns."
+                proposal_result = apply_proposals(state, provider, f"ollama:{MODEL}")
+                message = (
+                    f"Generated {proposal_result.properties_added} candidate properties "
+                    f"and {proposal_result.unknowns_added} unknowns."
+                )
+            if proposal_result is not None:
+                changed = bool(proposal_result.properties_added or proposal_result.unknowns_added)
             warning = source_warning(state)
             if warning:
                 raise ValueError(f"{warning}. Changes were not saved; start a new investigation.")
-            save(args.state, state, revision)
+            if changed:
+                save(args.state, state, revision)
+            elif load_snapshot(args.state)[1] != revision:
+                raise ValueError("Investigation changed while processing; changes were not saved.")
             print(message)
+            if proposal_result is not None:
+                for index, property_id in proposal_result.duplicate_properties:
+                    print(f"Skipped exact property proposal #{index}; matches {property_id}.")
+                for index, unknown_id in proposal_result.duplicate_unknowns:
+                    print(f"Skipped exact unknown proposal #{index}; matches {unknown_id}.")
+                for unknown_id, existing_id in proposal_result.similar_unknowns:
+                    print(
+                        f"Unknown {unknown_id} has the same normalized question as {existing_id}; "
+                        "details differ, review both."
+                    )
+                if not changed:
+                    print("No new proposals; investigation unchanged.")
     except (OSError, UnicodeError, SyntaxError, ValueError, EOFError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

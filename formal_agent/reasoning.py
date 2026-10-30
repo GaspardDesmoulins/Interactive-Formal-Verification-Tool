@@ -2,6 +2,7 @@
 
 import copy
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -22,9 +23,18 @@ class JsonFileProvider:
             return json.load(file)
 
 
+@dataclass
+class ProposalResult:
+    properties_added: int = 0
+    unknowns_added: int = 0
+    duplicate_properties: list[tuple[int, str]] = field(default_factory=list)
+    duplicate_unknowns: list[tuple[int, str]] = field(default_factory=list)
+    similar_unknowns: list[tuple[str, str]] = field(default_factory=list)
+
+
 def apply_proposals(
     state: dict[str, Any], provider: ReasoningProvider, reasoner: str
-) -> tuple[int, int]:
+) -> ProposalResult:
     if not reasoner.strip():
         raise ValueError("The reasoner name must not be empty.")
     reasoner = reasoner.strip()
@@ -65,53 +75,60 @@ def apply_proposals(
             if not isinstance(item[field], str) or not item[field].strip():
                 raise ValueError(f"Proposal field {field} must be a non-empty string.")
 
-    property_keys = set()
     for item in properties:
         check_item(item, {"function", "line", "statement"})
-        key = (item["function"], item["line"], item["statement"].strip())
-        if key in property_keys or any(
-            existing["origin"] == "llm"
-            and existing["reasoner"] == reasoner
-            and existing["source_function"] == {"name": key[0], "line": key[1]}
-            and existing["statement"] == key[2]
-            for existing in state["properties"]
-        ):
-            raise ValueError("Duplicate proposed property.")
-        property_keys.add(key)
-
-    unknown_keys = set()
     for item in unknowns:
         check_item(item, {"function", "line", "description", "question", "impact"})
-        key = (
-            item["function"], item["line"],
-            " ".join(item["question"].split()).casefold(),
-        )
-        if key in unknown_keys or any(
-            existing["function"] == key[0]
-            and existing["line"] == key[1]
-            and " ".join(existing["question"].split()).casefold() == key[2]
-            for existing in state["unknowns"]
-        ):
-            raise ValueError("Duplicate proposed unknown.")
-        unknown_keys.add(key)
 
-    for item in properties:
+    applied = ProposalResult()
+    for index, item in enumerate(properties, 1):
+        source_function = {"name": item["function"], "line": item["line"]}
+        statement = item["statement"].strip()
+        existing = next((
+            candidate for candidate in state["properties"]
+            if candidate["origin"] == "llm"
+            and candidate["reasoner"] == reasoner
+            and candidate["source_function"] == source_function
+            and candidate["statement"] == statement
+        ), None)
+        if existing is not None:
+            applied.duplicate_properties.append((index, existing["id"]))
+            continue
         state["properties"].append({
             "id": next_property_id(state),
-            "statement": item["statement"].strip(),
+            "statement": statement,
             "status": "candidate",
             "origin": "llm",
-            "source_function": {"name": item["function"], "line": item["line"]},
+            "source_function": source_function,
             "reasoner": reasoner,
             "accepted_by": None,
         })
+        applied.properties_added += 1
     existing_ids = {item["id"] for item in state["unknowns"]}
     next_id = 1
-    for item in unknowns:
+    for index, item in enumerate(unknowns, 1):
+        fields = ("description", "question", "impact")
+        same_function = [
+            existing for existing in state["unknowns"]
+            if existing["function"] == item["function"] and existing["line"] == item["line"]
+        ]
+        existing = next((
+            candidate for candidate in same_function
+            if all(candidate[name] == item[name].strip() for name in fields)
+        ), None)
+        if existing is not None:
+            applied.duplicate_unknowns.append((index, existing["id"]))
+            continue
         while f"U{next_id}" in existing_ids:
             next_id += 1
         unknown_id = f"U{next_id}"
         existing_ids.add(unknown_id)
+        question_key = " ".join(item["question"].split()).casefold()
+        applied.similar_unknowns.extend(
+            (unknown_id, candidate["id"])
+            for candidate in same_function
+            if " ".join(candidate["question"].split()).casefold() == question_key
+        )
         state["unknowns"].append({
             "id": unknown_id,
             "function": item["function"],
@@ -126,4 +143,5 @@ def apply_proposals(
             "status": "open",
             "answer": None,
         })
-    return len(properties), len(unknowns)
+        applied.unknowns_added += 1
+    return applied

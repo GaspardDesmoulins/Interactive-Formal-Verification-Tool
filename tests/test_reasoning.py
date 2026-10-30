@@ -73,24 +73,70 @@ class ReasoningTests(unittest.TestCase):
             {**self.data, "properties": [{"function": "f", "line": True, "statement": "x"}]},
             {**self.data, "unknowns": [{"function": "f", "line": 1}]},
             {**self.data, "unknowns": [{**self.data["unknowns"][0], "line": 50}]},
-            {**self.data, "properties": self.data["properties"] * 2},
+            {**self.data, "unknowns": self.data["unknowns"] * 2 + [{"function": "f"}]},
         ]:
             self.assertEqual(self.import_data(data)[0], 1)
             self.assertEqual(self.state.read_bytes(), original)
 
-    def test_duplicate_import_does_not_change_state(self) -> None:
+    def test_only_duplicate_import_reports_matches_without_changing_state(self) -> None:
         self.assertEqual(self.import_data(self.data)[0], 0)
         original = self.state.read_bytes()
-        code, _, error = self.import_data(self.data)
-        self.assertEqual(code, 1)
-        self.assertIn("Duplicate", error)
+        code, output, error = self.import_data(self.data)
+        self.assertEqual(code, 0)
+        self.assertEqual(error, "")
+        self.assertIn("Skipped exact property proposal #1; matches P1.", output)
+        self.assertIn("Skipped exact unknown proposal #1; matches U3.", output)
+        self.assertIn("No new proposals; investigation unchanged.", output)
         self.assertEqual(self.state.read_bytes(), original)
 
-    def test_answered_question_is_not_imported_again(self) -> None:
+    def test_mixed_existing_and_internal_duplicates_keep_new_proposals(self) -> None:
+        self.assertEqual(self.import_data(self.data)[0], 0)
+        new_property = {**self.data["properties"][0], "statement": "x is at most 100"}
+        new_unknown = {
+            **self.data["unknowns"][0],
+            "question": "Can x exceed 100?",
+            "description": "The upper input limit is unspecified.",
+        }
+        proposal = {
+            **self.data,
+            "properties": [self.data["properties"][0], new_property, new_property],
+            "unknowns": [self.data["unknowns"][0], new_unknown, new_unknown],
+        }
+        code, output, error = self.import_data(proposal)
+        self.assertEqual((code, error), (0, ""))
+        self.assertIn("1 candidate properties and 1 unknowns", output)
+        for expected in (
+            "property proposal #1; matches P1",
+            "property proposal #3; matches P2",
+            "unknown proposal #1; matches U3",
+            "unknown proposal #3; matches U4",
+        ):
+            self.assertIn(expected, output)
+        state = load(self.state)
+        self.assertEqual([item["id"] for item in state["properties"]], ["P1", "P2"])
+        self.assertEqual(state["unknowns"][-1]["question"], new_unknown["question"])
+        self.assertEqual(len(state["unknowns"]), 4)
+
+    def test_invalid_item_after_duplicates_and_new_items_is_atomic(self) -> None:
+        self.assertEqual(self.import_data(self.data)[0], 0)
+        original = self.state.read_bytes()
+        proposal = {
+            **self.data,
+            "properties": [
+                self.data["properties"][0],
+                {**self.data["properties"][0], "statement": "a new property"},
+            ],
+            "unknowns": [self.data["unknowns"][0], {"function": "f"}],
+        }
+        code, _, error = self.import_data(proposal)
+        self.assertEqual(code, 1)
+        self.assertIn("Invalid proposal fields", error)
+        self.assertEqual(self.state.read_bytes(), original)
+
+    def test_same_question_with_different_details_is_kept_for_review(self) -> None:
         self.assertEqual(
             self.run_cli("answer", str(self.state), "U2", "--answer", "nonnegative")[0], 0
         )
-        original = self.state.read_bytes()
         unknown = load(self.state)["unknowns"][1]
         proposal = {
             **self.data,
@@ -102,10 +148,47 @@ class ReasoningTests(unittest.TestCase):
                 "impact": "Input domain.",
             }],
         }
-        code, _, error = self.import_data(proposal)
-        self.assertEqual(code, 1)
-        self.assertIn("Duplicate", error)
+        code, output, error = self.import_data(proposal)
+        self.assertEqual((code, error), (0, ""))
+        self.assertIn("Unknown U3 has the same normalized question as U2", output)
+        state = load(self.state)
+        self.assertEqual(state["unknowns"][1]["status"], "answered")
+        self.assertEqual(state["unknowns"][2]["description"], "Input constraints.")
+        self.assertEqual(state["unknowns"][2]["impact"], "Input domain.")
+        self.assertEqual(state["unknowns"][2]["status"], "open")
+        self.assertEqual(
+            self.run_cli("mark-duplicate", str(self.state), "U3", "U2", "--reason", "reviewed")[0],
+            0,
+        )
+
+    def test_same_question_with_different_impact_inside_batch_is_kept(self) -> None:
+        first = self.data["unknowns"][0]
+        second = {**first, "impact": "Another consequence."}
+        code, output, error = self.import_data({**self.data, "unknowns": [first, second]})
+        self.assertEqual((code, error), (0, ""))
+        self.assertIn("Unknown U4 has the same normalized question as U3", output)
+        self.assertEqual(load(self.state)["unknowns"][-1]["impact"], "Another consequence.")
+
+    def test_exact_answered_question_is_not_imported_again(self) -> None:
+        self.assertEqual(self.import_data(self.data)[0], 0)
+        self.assertEqual(self.run_cli("answer", str(self.state), "U3", "--answer", "no")[0], 0)
+        original = self.state.read_bytes()
+        code, output, _ = self.import_data({**self.data, "properties": []})
+        self.assertEqual(code, 0)
+        self.assertIn("Skipped exact unknown proposal #1; matches U3.", output)
         self.assertEqual(self.state.read_bytes(), original)
+
+    def test_property_from_different_reasoner_is_preserved(self) -> None:
+        self.assertEqual(self.import_data(self.data)[0], 0)
+        self.proposals.write_text(json.dumps({**self.data, "unknowns": []}), encoding="utf-8")
+        code, _, _ = self.run_cli(
+            "import-proposals", str(self.state), str(self.proposals), "--reasoner", "other-model"
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            [item["reasoner"] for item in load(self.state)["properties"]],
+            ["test-model", "other-model"],
+        )
 
     def test_invalid_json_does_not_change_state(self) -> None:
         original = self.state.read_bytes()
@@ -133,7 +216,8 @@ class ReasoningTests(unittest.TestCase):
                 model["functions"].clear()
                 return data
 
-        self.assertEqual(apply_proposals(state, FakeProvider(), "fake"), (1, 1))
+        result = apply_proposals(state, FakeProvider(), "fake")
+        self.assertEqual((result.properties_added, result.unknowns_added), (1, 1))
         self.assertEqual(state["model"], original_model)
 
     def test_version_two_snapshot_is_read_and_upgraded_on_write(self) -> None:
