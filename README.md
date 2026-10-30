@@ -26,6 +26,8 @@ python -m unittest discover -s tests
 
 La commande `answer` affiche la question puis demande une réponse ; `--answer "..."` permet aussi de fournir celle-ci directement. `start` refuse d'écraser un fichier existant. L'état JSON est enregistré localement ; il contient notamment le chemin et l'empreinte SHA-256 du fichier analysé, les observations et les réponses. Protégez ce fichier s'il contient des informations sensibles.
 
+Le format de l'état et les liens entre inconnues et fonctions sont validés à la lecture. Le fichier n'est toutefois pas signé ni protégé contre les modifications : une provenance enregistrée est une déclaration, pas une preuve d'authenticité.
+
 Pour consulter des références lors de l'investigation, ajoutez au démarrage une option `--evidence` par fichier, par exemple `python -m formal_agent start module.py investigation.json --evidence exigences.txt --evidence test_module.py`. Les fichiers doivent être en UTF-8 et ne pas dépasser 32 768 octets chacun. Ils sont lus comme du texte non fiable, jamais exécutés, et leurs chemins et empreintes sont conservés dans le rapport. Si une référence change ou disparaît, l'investigation reste consultable mais les modifications sont bloquées ; il faut en créer une nouvelle.
 
 L'option facultative `--discover-evidence` recherche uniquement des fichiers conventionnels proches de la source : `README.md`, un document de même nom que le module, `test_<module>.py`, `<module>_test.py` et `test_<module>.py` dans le sous-dossier `tests`. Elle n'effectue aucune recherche récursive ; inspectez le rapport pour vérifier les fichiers retenus avant d'appeler le modèle. Une référence trouvée hors du dossier source par lien symbolique est refusée.

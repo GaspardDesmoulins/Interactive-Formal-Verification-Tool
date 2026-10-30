@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import io
 import json
 import tempfile
@@ -110,6 +111,44 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("Invalid unknown", error)
         self.assertEqual(self.state.read_bytes(), original)
+
+    def test_corrupted_identity_or_provenance_is_rejected(self) -> None:
+        self.assertEqual(self.run_cli("start", str(self.source), str(self.state))[0], 0)
+        state = load(self.state)
+        corruptions = [
+            lambda data: data["unknowns"][0].update(id="U0"),
+            lambda data: data["unknowns"][0].update(id="U01"),
+            lambda data: data["unknowns"][0].update(id="other"),
+            lambda data: data["unknowns"][0].update(id="U2"),
+            lambda data: data["unknowns"][0].update(function="missing"),
+            lambda data: data["unknowns"][0].update(line=2),
+            lambda data: data["unknowns"][0].update(question="  "),
+            lambda data: data["unknowns"][0].update(description=""),
+            lambda data: data["unknowns"][0].update(impact=" "),
+            lambda data: data["unknowns"][0].update(origin=""),
+            lambda data: data["model"].update(sha256="wrong"),
+            lambda data: data["model"].update(source=""),
+            lambda data: data["model"]["functions"][0].update(line=0),
+            lambda data: data["model"]["functions"][0].update(end_line=0),
+            lambda data: data["model"]["functions"].append(
+                copy.deepcopy(data["model"]["functions"][0])
+            ),
+        ]
+        for corrupt in corruptions:
+            with self.subTest(corrupt=corrupt):
+                broken = copy.deepcopy(state)
+                corrupt(broken)
+                self.state.write_text(json.dumps(broken), encoding="utf-8")
+                original = self.state.read_bytes()
+                for args in (
+                    ("show", str(self.state)),
+                    ("report", str(self.state)),
+                    ("answer", str(self.state), "U1", "--answer", "No"),
+                ):
+                    result, _, error = self.run_cli(*args)
+                    self.assertEqual(result, 1)
+                    self.assertIn("Error:", error)
+                    self.assertEqual(self.state.read_bytes(), original)
 
     def test_interactive_answer_and_eof(self) -> None:
         self.assertEqual(self.run_cli("start", str(self.source), str(self.state))[0], 0)

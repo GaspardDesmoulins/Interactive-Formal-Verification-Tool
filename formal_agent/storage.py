@@ -8,6 +8,14 @@ from pathlib import Path
 from typing import Any
 
 
+def valid_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
 def validate_imports(imports: Any) -> None:
     if not isinstance(imports, list) or any(
         not isinstance(item, dict)
@@ -30,7 +38,8 @@ def validate(state: Any) -> None:
     if (
         not isinstance(model, dict)
         or not isinstance(model.get("source"), str)
-        or not isinstance(model.get("sha256"), str)
+        or not model["source"].strip()
+        or not valid_sha256(model.get("sha256"))
         or not isinstance(model.get("functions"), list)
         or not isinstance(unknowns, list)
     ):
@@ -50,20 +59,22 @@ def validate(state: Any) -> None:
             or not reference["path"]
             or reference["path"] == model["source"]
             or reference["path"] in reference_paths
-            or not isinstance(reference["sha256"], str)
-            or len(reference["sha256"]) != 64
-            or any(char not in "0123456789abcdef" for char in reference["sha256"])
+            or not valid_sha256(reference["sha256"])
         ):
             raise ValueError("Invalid evidence source.")
         reference_paths.add(reference["path"])
         references_by_path[reference["path"]] = reference["sha256"]
+    function_keys = set()
     for function in model["functions"]:
         if not isinstance(function, dict):
             raise ValueError("Invalid function observation.")
         if (
             not isinstance(function.get("name"), str)
+            or not function["name"].strip()
             or type(function.get("line")) is not int
+            or function["line"] < 1
             or type(function.get("end_line")) is not int
+            or function["end_line"] < function["line"]
             or type(function.get("async")) is not bool
             or not isinstance(function.get("parameters"), list)
             or not all(isinstance(item, str) for item in function["parameters"])
@@ -77,6 +88,10 @@ def validate(state: Any) -> None:
                 and not isinstance(function["docstring"], str))
         ):
             raise ValueError("Invalid function observation.")
+        function_key = (function["name"], function["line"])
+        if function_key in function_keys:
+            raise ValueError("Duplicate function observation.")
+        function_keys.add(function_key)
         if "imports" in function:
             validate_imports(function["imports"])
     ids = set()
@@ -88,17 +103,21 @@ def validate(state: Any) -> None:
         answer = unknown.get("answer")
         if (
             not isinstance(unknown_id, str)
-            or not unknown_id
+            or not unknown_id.startswith("U")
+            or not unknown_id[1:].isascii()
+            or not unknown_id[1:].isdigit()
+            or unknown_id[1] == "0"
             or unknown_id in ids
             or status not in ("open", "answered", "duplicate")
             or (status == "duplicate" and state["schema_version"] < 6)
             or (status in ("open", "duplicate") and answer is not None)
             or (status == "answered" and (not isinstance(answer, str) or not answer.strip()))
             or any(
-                not isinstance(unknown.get(key), str)
+                not isinstance(unknown.get(key), str) or not unknown[key].strip()
                 for key in ("function", "origin", "description", "question", "impact")
             )
             or type(unknown.get("line")) is not int
+            or (unknown["function"], unknown["line"]) not in function_keys
             or any(
                 not isinstance(unknown.get(key), list)
                 or not all(isinstance(item, str) for item in unknown[key])
