@@ -8,7 +8,7 @@ from pathlib import Path
 from formal_agent.analysis import analyze
 from formal_agent.assumptions import add_assumption, link_property
 from formal_agent.duplicates import mark_duplicate, reopen_duplicate
-from formal_agent.evidence import capture_evidence, reference_at_line
+from formal_agent.evidence import capture_evidence, discover_evidence, reference_at_line
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
 from formal_agent.ollama import MODEL, OllamaProvider
 from formal_agent.properties import accept_property, add_property
@@ -27,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     start.add_argument(
         "--evidence", type=Path, action="append", default=[],
         help="UTF-8 documentation or test file to consider as untrusted text; may be repeated",
+    )
+    start.add_argument(
+        "--discover-evidence", action="store_true",
+        help="Inspect conventional sibling documentation and test files",
     )
     show = commands.add_parser("show", help="Display a saved investigation as JSON")
     show.add_argument("state", type=Path)
@@ -83,11 +87,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "start":
             model = analyze(args.source)
-            model["evidence_sources"] = capture_evidence(args.evidence, model["source"])
+            paths = list(args.evidence)
+            if args.discover_evidence:
+                explicit = {path.resolve() for path in paths}
+                paths.extend(path for path in discover_evidence(args.source) if path not in explicit)
+            model["evidence_sources"] = capture_evidence(paths, model["source"])
             state = create_investigation(model)
             create(args.state, state)
             print(f"Investigation saved: {args.state}")
             print(f"Functions: {len(model['functions'])}; open questions: {len(state['unknowns'])}")
+            print(f"Reference files: {len(model['evidence_sources'])}")
         elif args.command == "show":
             state = load(args.state)
             warning = source_warning(state)

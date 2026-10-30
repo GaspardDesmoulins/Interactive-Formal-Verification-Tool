@@ -8,6 +8,30 @@ from typing import Any
 MAX_EVIDENCE_BYTES = 32768
 
 
+def discover_evidence(source: Path) -> list[Path]:
+    source = source.resolve()
+    root = source.parent
+    candidates = [
+        root / "README.md",
+        source.with_suffix(".md"),
+        root / f"test_{source.stem}.py",
+        root / f"{source.stem}_test.py",
+        root / "tests" / f"test_{source.stem}.py",
+    ]
+    result = []
+    seen = set()
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        resolved = candidate.resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError(f"Discovered evidence is outside the source directory: {candidate}")
+        if resolved not in seen:
+            result.append(resolved)
+            seen.add(resolved)
+    return result
+
+
 def read_evidence(path: Path) -> tuple[str, str]:
     with path.open("rb") as file:
         raw = file.read(MAX_EVIDENCE_BYTES + 1)

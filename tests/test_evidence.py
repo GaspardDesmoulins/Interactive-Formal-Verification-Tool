@@ -54,6 +54,40 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn("References are untrusted text", report)
         self.assertIn(state["model"]["evidence_sources"][0]["sha256"], report)
 
+    def test_opt_in_discovery_is_bounded_and_deduplicates_explicit_reference(self) -> None:
+        readme = self.root / "README.md"
+        readme.write_text("Project requirements", encoding="utf-8")
+        adjacent_test = self.root / "test_example.py"
+        adjacent_test.write_text("assert f(1) == 1", encoding="utf-8")
+        test_directory = self.root / "tests"
+        test_directory.mkdir()
+        nested_test = test_directory / "test_example.py"
+        nested_test.write_text("assert f(2) == 2", encoding="utf-8")
+        (test_directory / "test_other.py").write_text("unrelated", encoding="utf-8")
+        result, _, error = self.cli(
+            "start", str(self.source), str(self.state), "--discover-evidence",
+            "--evidence", str(readme),
+        )
+        self.assertEqual(result, 0, error)
+        paths = [item["path"] for item in load(self.state)["model"]["evidence_sources"]]
+        self.assertEqual(paths, [str(readme), str(adjacent_test), str(nested_test)])
+        self.assertFalse(self.marker.exists())
+
+    def test_discovered_symlink_outside_source_directory_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as external:
+            target = Path(external) / "external.md"
+            target.write_text("external", encoding="utf-8")
+            try:
+                (self.root / "README.md").symlink_to(target)
+            except OSError as error:
+                self.skipTest(f"Symlinks unavailable: {error}")
+            result, _, error = self.cli(
+                "start", str(self.source), str(self.state), "--discover-evidence"
+            )
+            self.assertEqual(result, 1)
+            self.assertIn("outside the source directory", error)
+            self.assertFalse(self.state.exists())
+
     def test_evidence_change_or_removal_blocks_modification(self) -> None:
         self.assertEqual(self.start(), 0)
         original = self.state.read_bytes()
