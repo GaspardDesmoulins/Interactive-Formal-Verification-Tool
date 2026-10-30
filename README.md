@@ -4,7 +4,7 @@ Interactive Formal Verification Tool est un projet open source visant à aider l
 
 Le projet ne promet ni de découvrir toutes les défaillances, ni de démontrer automatiquement la correction d'un système. Sa valeur ajoutée est une **investigation interactive pilotée par les incertitudes** : le LLM détermine ce qu'il ne sait pas, recherche les informations disponibles, interroge l'utilisateur lorsque c'est nécessaire et transforme progressivement les réponses en propriétés et obligations de preuve vérifiables.
 
-**État du projet :** une première tranche expérimentale analyse statiquement les fonctions Python de premier niveau, enregistre les réponses à des questions et permet de proposer puis d'accepter explicitement des propriétés. Elle peut aussi générer des propositions avec les modèles locaux Ollama `bonsai-2:4b` ou `qwen3.5:9b`, ou les importer depuis un fichier. Le reste des fonctionnalités, interfaces et intégrations décrites ci-dessous reste à réaliser. L'analyse de raisonnements textuels fait partie de la vision, mais son périmètre et ses méthodes restent à définir.
+**État du projet :** le MVP 1 expérimental couvre une investigation des fonctions Python de premier niveau : analyse statique, références, questions et réponses persistantes, propriétés et hypothèses candidates, décisions et rapport. Il peut générer des propositions avec les modèles locaux Ollama `bonsai-2:4b` ou `qwen3.5:9b`, ou les importer depuis un fichier. Il ne démontre ni l'exactitude des propositions ni la correction du programme ; les fonctionnalités et intégrations ultérieures décrites ci-dessous restent à réaliser. L'analyse de raisonnements textuels fait partie de la vision, mais son périmètre et ses méthodes restent à définir.
 
 ## Premiers pas
 
@@ -187,13 +187,15 @@ Un contre-exemple peut révéler un défaut du programme, une spécification ina
 
 ## Développement envisagé
 
-Les étapes suivantes décrivent une progression ; seule la première tranche du MVP 1 présentée ci-dessus est actuellement implémentée :
+Les étapes suivantes décrivent une progression ; le MVP 1 est limité au périmètre Python expérimental présenté ci-dessus :
 
 1. **MVP 1 — Investigation interactive :** importer du code Python, analyser son AST et ses dépendances directes, proposer des propriétés avec un LLM, tenir un registre des inconnues, poser des questions, persister l'état et produire un rapport initial. Cette étape ne prétend pas apporter une preuve formelle complète.
 2. **MVP 2 — Tests et défaillances :** générer et exécuter des tests, étudier l'intégration de Hypothesis, explorer les valeurs limites et exceptions, réduire les cas d'échec et utiliser le mutation testing.
 3. **MVP 3 — Vérification formelle :** choisir un premier backend selon le langage et les capacités nécessaires, créer des obligations de preuve et gérer explicitement les hypothèses et résultats conditionnels.
 4. **MVP 4 — Raffinement :** analyser les contre-exemples, préciser les hypothèses et le modèle, réévaluer les questions et relancer les vérifications affectées.
 5. **MVP 5 — Systèmes complexes :** étendre progressivement l'analyse aux ensembles de fichiers, aux dépendances externes, à l'état partagé, à la concurrence, aux protocoles et aux invariants interprocéduraux.
+
+Le MVP 1 est évalué par la suite de tests standard, notamment un parcours complet avec fournisseur simulé et reprise entre processus. Un essai avec Ollama local et un test facultatif de dépassement de contexte complètent cette évaluation sans être requis pour les tests ordinaires. Les références sont fournies ou découvertes dans un voisinage borné ; les liens entre questions et propriétés sont enregistrés explicitement par l'utilisateur. La recherche et la résolution automatiques exhaustives des inconnues, la détection de tous les doublons ou désaccords et la garantie que le modèle a exploité tout le contexte ne sont pas assurées.
 
 L'identification explicite des scénarios non testés n'est pas encore formulée comme exigence de ces MVP ni implémentée. La lecture de tests en référence ne mesure pas leur couverture ; une couverture de lignes ou de branches ne garantit pas non plus la couverture des scénarios métier.
 

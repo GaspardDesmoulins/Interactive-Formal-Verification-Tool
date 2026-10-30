@@ -14,7 +14,7 @@ Cette tranche permet d'exercer les transitions `open` → `answered` et la repri
 
 - Intégrer directement AProver ou un moteur formel ne résout pas la première étape Python interactive et introduit des dépendances et des choix de vérification prématurés.
 - Connecter d'emblée un LLM rendrait le premier parcours dépendant d'un fournisseur et de ses identifiants avant de disposer d'un état d'investigation testable.
-- Une analyse AST est reproductible et ne nécessite aucune exécution du code cible, mais ne résout ni les appels dynamiques ni les comportements réels. Elle ne recherche pas encore les réponses dans les tests ou la documentation, et les questions restent génériques.
+- Une analyse AST est reproductible et ne nécessite aucune exécution du code cible, mais ne résout ni les appels dynamiques ni les comportements réels. À cette étape initiale, elle ne recherchait pas encore les réponses dans les tests ou la documentation, et les questions restaient génériques. Le MVP 1 permet depuis de fournir ou découvrir des références bornées, sans garantir leur interprétation correcte.
 
 ## Prochaines étapes
 
