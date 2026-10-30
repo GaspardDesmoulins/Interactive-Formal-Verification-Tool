@@ -57,6 +57,7 @@ class EndToEndTests(unittest.TestCase):
             root = Path(directory)
             source = root / "withdraw.py"
             evidence = root / "requirements.txt"
+            tests_reference = root / "test_withdraw.py"
             state = root / "investigation.json"
             marker = root / "executed"
             source.write_text(
@@ -69,6 +70,12 @@ class EndToEndTests(unittest.TestCase):
                 encoding="utf-8",
             )
             evidence.write_text("Amounts must be positive.\n# amount 0\n", encoding="utf-8")
+            tests_reference.write_text(
+                f'open({str(marker)!r}, "w").write("reference executed")\n'
+                'def test_zero():\n'
+                '    withdraw(100, 0)\n',
+                encoding="utf-8",
+            )
 
             def invoke(*args: str) -> subprocess.CompletedProcess[str]:
                 return subprocess.run(
@@ -81,7 +88,8 @@ class EndToEndTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 return result.stdout
 
-            success("start", str(source), str(state), "--evidence", str(evidence))
+            success("start", str(source), str(state), "--evidence", str(evidence),
+                    "--evidence", str(tests_reference))
             fake = subprocess.run(
                 [sys.executable, "-c", FAKE_OLLAMA, str(state)],
                 cwd=ROOT, capture_output=True, text=True, timeout=30,
@@ -129,13 +137,14 @@ class EndToEndTests(unittest.TestCase):
             success("reject-suggestion", str(state), "T3", "--reason", "Needs more context")
             success("accept-suggestion", str(state), "T3", "--expected", "Reject the amount",
                     "--reason", "Reviewed the boundary")
+            success("analyze-test-calls", str(state), "P1")
             success("record-conflict", str(state), unknown_id, "--description", "Sources differ.")
             success("resolve-conflict", str(state), "C1", "--resolution", "Requirements prevail.")
             success("finish", str(state), "--allow-open")
             report = success("report", str(state))
             self.assertEqual(report, success("report", str(state)))
             self.assertIn("Investigation phase: finished", report)
-            self.assertIn("Reference files (1)", report)
+            self.assertIn("Reference files (2)", report)
             self.assertIn("A1 [assumed]", report)
             self.assertIn("C1 [resolved]", report)
             self.assertIn("S1 [user assessment: reference_found]", report)
@@ -147,6 +156,9 @@ class EndToEndTests(unittest.TestCase):
             self.assertIn("Decision 2: accepted", report)
             self.assertIn("Accepted from suggestion: T3", report)
             self.assertIn("same-line literal text match only", report)
+            self.assertIn("Static call analyses (1)", report)
+            self.assertIn("Possible syntactic match: TA1", report)
+            self.assertIn("target resolution, test collection and execution are unknown", report)
             self.assertIn(f'User-marked duplicate of: "{unknown_id}"', report)
             self.assertIn("verification: not performed", report)
             self.assertIn("Verification results: none", report)

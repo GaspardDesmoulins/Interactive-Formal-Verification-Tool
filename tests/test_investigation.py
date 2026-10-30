@@ -77,7 +77,7 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("Error:", error)
         self.assertFalse(self.state.exists())
-        self.state.write_text('{"schema_version": 10}', encoding="utf-8")
+        self.state.write_text('{"schema_version": 11}', encoding="utf-8")
         self.assertEqual(self.run_cli("show", str(self.state))[0], 1)
 
     def test_target_is_not_executed(self) -> None:

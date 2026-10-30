@@ -266,16 +266,17 @@ class ScenarioSuggestionTests(unittest.TestCase):
         old = load(self.state)
         old["schema_version"] = 8
         del old["scenario_suggestions"]
+        del old["test_call_analyses"]
         self.state.write_text(json.dumps(old), encoding="utf-8")
         original = self.state.read_bytes()
         migrated = load(self.state)
-        self.assertEqual(migrated["schema_version"], 9)
+        self.assertEqual(migrated["schema_version"], 10)
         self.assertEqual(migrated["scenarios"], old["scenarios"])
         self.assertEqual(migrated["scenario_suggestions"], [])
         self.assertEqual(self.state.read_bytes(), original)
         self.suggest()
         written = json.loads(self.state.read_text(encoding="utf-8"))
-        self.assertEqual(written["schema_version"], 9)
+        self.assertEqual(written["schema_version"], 10)
         self.assertEqual(written["scenarios"], old["scenarios"])
 
     def test_corrupted_suggestions_decisions_and_citations_are_rejected(self) -> None:

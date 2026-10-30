@@ -5,6 +5,7 @@ from typing import Any
 
 from formal_agent.investigation import source_warning
 from formal_agent.scenario_suggestions import suggestion_description
+from formal_agent.reference_calls import suggestion_matches
 
 
 def quote(value: str) -> str:
@@ -31,6 +32,7 @@ def render_report(state: dict[str, Any]) -> str:
         "- Accepted properties are specifications, not proofs.",
         "- Scenario assessments and citations do not establish coverage or gaps.",
         "- Suggestions are limited boundary templates, not an exhaustive scenario search.",
+        "- Static call observations do not resolve targets or establish execution or coverage.",
         "- LLM context completeness is not independently verified; servers may truncate inputs.",
         "",
         f"Module imports ({len(model.get('imports', []))})",
@@ -130,6 +132,15 @@ def render_report(state: dict[str, Any]) -> str:
         ), None)
         if source_suggestion is not None:
             lines.append(f"  Accepted from suggestion: {source_suggestion}; relevance not verified")
+        related_analyses = [
+            item["id"] for item in state["test_call_analyses"]
+            if item["property_id"] == scenario["property_id"]
+        ]
+        if related_analyses:
+            lines.append(
+                f"  Static analyses for the same property: {', '.join(related_analyses)}; "
+                "free-text scenario not automatically matched"
+            )
         for index, review in enumerate(reviews, 1):
             lines.append(
                 f"  Review {index}: {review['assessment']}; user reason: "
@@ -166,11 +177,62 @@ def render_report(state: dict[str, Any]) -> str:
             )
         if suggestion["matches_truncated"]:
             lines.append("  Additional text matches omitted; the displayed list is limited.")
+        matching_calls = suggestion_matches(state, suggestion)
+        if not matching_calls and any(
+            item["property_id"] == suggestion["property_id"]
+            for item in state["test_call_analyses"]
+        ):
+            lines.append(
+                "  No syntactic argument match found; this is not evidence of a coverage gap."
+            )
+        for analysis_id, call, argument in matching_calls:
+            reference = call["reference"]
+            lines.append(
+                f"  Possible syntactic match: {analysis_id}, {quote(reference['path'])}:"
+                f"{reference['line']}; argument {quote(argument['expression'])}; "
+                "target and coverage not verified"
+            )
         for index, decision in enumerate(decisions, 1):
             lines.append(
                 f"  Decision {index}: {decision['decision']}; user reason: "
                 f"{quote(decision['reason'])}; scenario: {decision['scenario_id'] or 'none'}"
             )
+    lines.extend(["", f"Static call analyses ({len(state['test_call_analyses'])})"])
+    for analysis in state["test_call_analyses"]:
+        lines.append(
+            f"- {analysis['id']} property {analysis['property_id']}; "
+            f"method: {analysis['method']}; Python references: {len(analysis['evidence_scope'])}"
+        )
+        lines.append(
+            "  Same-name calls only; target resolution, test collection and execution are unknown."
+        )
+        lines.append(
+            "  Variables, fixtures, indirect calls, aliases and dynamic parametrization are not resolved."
+        )
+        lines.append(
+            "  Parameter names are hypothetical mappings to the property function, not bindings."
+        )
+        if not analysis["calls"]:
+            lines.append("  No same-name calls found; this is not evidence of a coverage gap.")
+        for call in analysis["calls"]:
+            reference = call["reference"]
+            lines.append(
+                f"  {quote(reference['path'])}:{reference['line']}; "
+                f"SHA-256: {quote(reference['sha256'])}; "
+                f"{call['kind']} call {quote(call['callee'])}"
+            )
+            for argument in call["arguments"]:
+                parameter = quote(argument["parameter"]) if argument["parameter"] is not None else "unknown"
+                position = (
+                    f"position {argument['position']}" if argument["position"] is not None
+                    else f"keyword {quote(argument['keyword'])}" if argument["keyword"] is not None
+                    else "keyword unpack"
+                )
+                lines.append(
+                    f"    {argument['kind']} {position}; expression "
+                    f"{quote(argument['expression'])}; {argument['value_kind']}; "
+                    f"possible parameter: {parameter}"
+                )
     lines.extend(["", f"Disagreements ({len(state['conflicts'])})"])
     for conflict in state["conflicts"]:
         lines.append(

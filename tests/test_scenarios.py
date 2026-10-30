@@ -157,10 +157,11 @@ class ScenarioTests(unittest.TestCase):
         legacy["schema_version"] = 7
         del legacy["scenarios"]
         del legacy["scenario_suggestions"]
+        del legacy["test_call_analyses"]
         self.state.write_text(json.dumps(legacy), encoding="utf-8")
         original = self.state.read_bytes()
         migrated = load(self.state)
-        self.assertEqual(migrated["schema_version"], 9)
+        self.assertEqual(migrated["schema_version"], 10)
         self.assertEqual(migrated["scenarios"], [])
         self.assertEqual(migrated["properties"], legacy["properties"])
         self.assertEqual(migrated["unknowns"], legacy["unknowns"])
@@ -168,7 +169,7 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(self.state.read_bytes(), original)
         self.add_scenario()
         written = json.loads(self.state.read_text(encoding="utf-8"))
-        self.assertEqual(written["schema_version"], 9)
+        self.assertEqual(written["schema_version"], 10)
         self.assertEqual(written["properties"], legacy["properties"])
         self.assertEqual(written["conflicts"], legacy["conflicts"])
 

@@ -18,6 +18,7 @@ from formal_agent.reporting import render_report
 from formal_agent.scenario_suggestions import decide_suggestion, suggest_scenarios
 from formal_agent.scenarios import ASSESSMENTS, add_scenario, review_scenario
 from formal_agent.storage import create, load, load_snapshot, save
+from formal_agent.reference_calls import analyze_test_calls
 from formal_agent.workflow import (
     answer_recorded, ask, finish, prepare_answer, prevent_reask, require_active, resume,
 )
@@ -122,6 +123,11 @@ def main(argv: list[str] | None = None) -> int:
     reject_suggestion.add_argument("state", type=Path)
     reject_suggestion.add_argument("suggestion_id")
     reject_suggestion.add_argument("--reason", required=True, help="Reason for rejecting")
+    static_calls = commands.add_parser(
+        "analyze-test-calls", help="Inspect same-name calls in declared Python references"
+    )
+    static_calls.add_argument("state", type=Path)
+    static_calls.add_argument("property_id")
     propose = commands.add_parser("import-proposals", help="Import untrusted LLM proposals")
     propose.add_argument("state", type=Path)
     propose.add_argument("proposals", type=Path)
@@ -276,6 +282,14 @@ def main(argv: list[str] | None = None) -> int:
                 require_active(state)
                 decide_suggestion(state, args.suggestion_id, "rejected", args.reason)
                 message = f"Suggestion {args.suggestion_id} rejected; user reason recorded."
+            elif args.command == "analyze-test-calls":
+                require_active(state)
+                analysis_id, changed, count = analyze_test_calls(state, args.property_id)
+                action = "Recorded" if changed else "Already recorded"
+                message = (
+                    f"{action} static call analysis {analysis_id}: {count} same-name calls. "
+                    "Call targets, execution and coverage are not established."
+                )
             elif args.command == "import-proposals":
                 require_active(state)
                 proposal_result = apply_proposals(state, JsonFileProvider(args.proposals), args.reasoner)

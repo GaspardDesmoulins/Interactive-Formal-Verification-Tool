@@ -9,6 +9,9 @@ from typing import Any
 
 from formal_agent.scenario_suggestions import MAX_MATCHES, VALUES, property_function
 from formal_agent.scenarios import ASSESSMENTS
+from formal_agent.reference_calls import (
+    MAX_ARGUMENTS, MAX_CALLS, MAX_EXPRESSION, METHOD, python_references,
+)
 
 
 def valid_sha256(value: Any) -> bool:
@@ -45,13 +48,15 @@ def validate(state: Any) -> None:
     if (
         not isinstance(state, dict)
         or type(state.get("schema_version")) is not int
-        or state["schema_version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9)
+        or state["schema_version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
     ):
         raise ValueError("Invalid or unsupported investigation schema.")
     if state["schema_version"] < 8 and "scenarios" in state:
         raise ValueError("Legacy schemas must not contain scenarios.")
     if state["schema_version"] < 9 and "scenario_suggestions" in state:
         raise ValueError("Legacy schemas must not contain scenario suggestions.")
+    if state["schema_version"] < 10 and "test_call_analyses" in state:
+        raise ValueError("Legacy schemas must not contain static call analyses.")
     model = state.get("model")
     unknowns = state.get("unknowns")
     if (
@@ -482,6 +487,121 @@ def validate(state: Any) -> None:
                 raise ValueError("Invalid scenario suggestion decision or link.")
             if decision["decision"] == "accepted":
                 accepted_scenarios.add(scenario_id)
+    if state["schema_version"] == 9:
+        return
+    analyses = state.get("test_call_analyses")
+    if not isinstance(analyses, list):
+        raise ValueError("Invalid static call analyses.")
+    analysis_ids = set()
+    python_sources = python_references(model)
+    python_paths = {item["path"] for item in python_sources}
+    for analysis in analyses:
+        if not isinstance(analysis, dict) or set(analysis) != {
+            "id", "property_id", "function", "method", "evidence_scope", "calls"
+        }:
+            raise ValueError("Invalid static call analysis.")
+        analysis_id = analysis["id"]
+        property_id = analysis["property_id"]
+        if (
+            not isinstance(analysis_id, str)
+            or not analysis_id.startswith("TA")
+            or not analysis_id[2:].isascii()
+            or not analysis_id[2:].isdigit()
+            or analysis_id[2] == "0"
+            or analysis_id in analysis_ids
+            or not isinstance(property_id, str)
+            or property_id not in properties_by_id
+            or analysis["method"] != METHOD
+            or not python_sources
+            or analysis["evidence_scope"] != python_sources
+            or not isinstance(analysis["calls"], list)
+            or len(analysis["calls"]) > MAX_CALLS
+        ):
+            raise ValueError("Invalid static call analysis or provenance.")
+        function = property_function(state, properties_by_id[property_id])
+        target = analysis["function"]
+        if (
+            not isinstance(target, dict)
+            or set(target) != {"name", "line"}
+            or not isinstance(target["name"], str)
+            or type(target["line"]) is not int
+            or target != {"name": function["name"], "line": function["line"]}
+        ):
+            raise ValueError("Static call analysis does not match the property function.")
+        analysis_ids.add(analysis_id)
+        for call in analysis["calls"]:
+            if (
+                not isinstance(call, dict)
+                or set(call) != {"reference", "callee", "kind", "arguments"}
+                or not valid_reference(call["reference"], references_by_path)
+                or call["reference"]["path"] not in python_paths
+                or not isinstance(call["callee"], str)
+                or not call["callee"].strip()
+                or len(call["callee"]) > MAX_EXPRESSION
+                or call["kind"] not in ("name", "attribute")
+                or not isinstance(call["arguments"], list)
+                or len(call["arguments"]) > MAX_ARGUMENTS
+            ):
+                raise ValueError("Invalid static call observation.")
+            positional_count = 0
+            seen_star = False
+            seen_keyword = False
+            for argument in call["arguments"]:
+                if not isinstance(argument, dict) or set(argument) != {
+                    "kind", "position", "keyword", "parameter", "expression", "value_kind", "boundary"
+                }:
+                    raise ValueError("Invalid static call argument.")
+                kind = argument["kind"]
+                parameter = argument["parameter"]
+                if (
+                    kind not in ("positional", "starred", "keyword", "keyword_unpack")
+                    or not isinstance(argument["expression"], str)
+                    or not argument["expression"].strip()
+                    or len(argument["expression"]) > MAX_EXPRESSION
+                    or argument["value_kind"] not in ("literal", "unresolved")
+                    or (argument["boundary"] is not None and argument["boundary"] not in VALUES)
+                    or (argument["boundary"] is not None and argument["value_kind"] != "literal")
+                    or (
+                        parameter is not None
+                        and (
+                            not isinstance(parameter, str)
+                            or not parameter.isidentifier()
+                            or parameter not in function["parameters"]
+                        )
+                    )
+                ):
+                    raise ValueError("Invalid static call argument.")
+                if kind in ("positional", "starred"):
+                    if (
+                        seen_keyword
+                        or type(argument["position"]) is not int
+                        or argument["position"] != positional_count
+                        or argument["keyword"] is not None
+                        or (seen_star and parameter is not None)
+                        or (kind == "starred" and (
+                            parameter is not None or argument["value_kind"] != "unresolved"
+                        ))
+                    ):
+                        raise ValueError("Invalid static positional argument.")
+                    positional_count += 1
+                    seen_star = seen_star or kind == "starred"
+                else:
+                    seen_keyword = True
+                    keyword = argument["keyword"]
+                    if (
+                        argument["position"] is not None
+                        or (kind == "keyword" and (
+                            not isinstance(keyword, str)
+                            or not keyword.isidentifier()
+                            or (parameter is not None and parameter != keyword)
+                        ))
+                        or (kind == "keyword_unpack" and (
+                            keyword is not None
+                            or parameter is not None
+                            or argument["value_kind"] != "unresolved"
+                        ))
+                    ):
+                        raise ValueError("Invalid static keyword argument.")
 
 
 def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
@@ -514,6 +634,9 @@ def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
     if state["schema_version"] == 8:
         state["schema_version"] = 9
         state["scenario_suggestions"] = []
+    if state["schema_version"] == 9:
+        state["schema_version"] = 10
+        state["test_call_analyses"] = []
     return state, hashlib.sha256(raw).hexdigest()
 
 

@@ -48,6 +48,7 @@ def apply_proposals(
         "conflicts": state["conflicts"],
         "scenarios": state["scenarios"],
         "scenario_suggestions": state["scenario_suggestions"],
+        "test_call_analyses": state["test_call_analyses"],
     })
     result = provider.propose(model)
     if not isinstance(result, dict) or set(result) != {"source_sha256", "properties", "unknowns"}:

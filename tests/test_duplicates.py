@@ -84,9 +84,10 @@ class DuplicateTests(unittest.TestCase):
         del state["conflicts"]
         del state["scenarios"]
         del state["scenario_suggestions"]
+        del state["test_call_analyses"]
         self.state.write_text(json.dumps(state), encoding="utf-8")
         original = self.state.read_bytes()
-        self.assertEqual(load(self.state)["schema_version"], 9)
+        self.assertEqual(load(self.state)["schema_version"], 10)
         self.assertEqual(self.state.read_bytes(), original)
         self.assertEqual(self.cli(
             "mark-duplicate", str(self.state), "U3", "U2", "--reason", "same"
