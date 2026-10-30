@@ -1,5 +1,6 @@
 """Persist versioned investigation snapshots locally."""
 
+import hashlib
 import json
 import os
 import tempfile
@@ -144,15 +145,20 @@ def validate(state: Any) -> None:
         property_ids.add(property_id)
 
 
-def load(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as file:
-        state = json.load(file)
+def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
+    raw = path.read_bytes()
+    state = json.loads(raw.decode("utf-8"))
     validate(state)
     if state["schema_version"] == 1:
         state["schema_version"] = 2
         state["properties"] = []
     if state["schema_version"] == 2:
         state["schema_version"] = 3
+    return state, hashlib.sha256(raw).hexdigest()
+
+
+def load(path: Path) -> dict[str, Any]:
+    state, _ = load_snapshot(path)
     return state
 
 
@@ -163,7 +169,7 @@ def create(path: Path, state: dict[str, Any]) -> None:
         file.write("\n")
 
 
-def save(path: Path, state: dict[str, Any]) -> None:
+def save(path: Path, state: dict[str, Any], expected_revision: str) -> None:
     validate(state)
     temporary_path = None
     try:
@@ -173,6 +179,8 @@ def save(path: Path, state: dict[str, Any]) -> None:
             temporary_path = Path(file.name)
             json.dump(state, file, ensure_ascii=False, indent=2)
             file.write("\n")
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected_revision:
+            raise ValueError("Investigation changed while processing; changes were not saved.")
         os.replace(temporary_path, path)
     finally:
         if temporary_path is not None and temporary_path.exists():

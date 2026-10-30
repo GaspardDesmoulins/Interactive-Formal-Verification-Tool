@@ -4,7 +4,7 @@ Interactive Formal Verification Tool est un projet open source visant à aider l
 
 Le projet ne promet ni de découvrir toutes les défaillances, ni de démontrer automatiquement la correction d'un système. Sa valeur ajoutée est une **investigation interactive pilotée par les incertitudes** : le LLM détermine ce qu'il ne sait pas, recherche les informations disponibles, interroge l'utilisateur lorsque c'est nécessaire et transforme progressivement les réponses en propriétés et obligations de preuve vérifiables.
 
-**État du projet :** une première tranche expérimentale analyse statiquement les fonctions Python de premier niveau, enregistre les réponses à des questions, importe des propositions structurées et permet d'accepter explicitement des propriétés. Aucun fournisseur de LLM n'est intégré : les propositions sont encore préparées séparément. Le reste des fonctionnalités, interfaces et intégrations décrites ci-dessous reste à réaliser. L'analyse de raisonnements textuels fait partie de la vision, mais son périmètre et ses méthodes restent à définir.
+**État du projet :** une première tranche expérimentale analyse statiquement les fonctions Python de premier niveau, enregistre les réponses à des questions et permet de proposer puis d'accepter explicitement des propriétés. Elle peut aussi générer des propositions avec le modèle local Ollama `bonsai-2:4b` ou les importer depuis un fichier. Le reste des fonctionnalités, interfaces et intégrations décrites ci-dessous reste à réaliser. L'analyse de raisonnements textuels fait partie de la vision, mais son périmètre et ses méthodes restent à définir.
 
 ## Premiers pas
 
@@ -13,6 +13,7 @@ Depuis la racine du dépôt, avec Python 3.10 ou plus récent :
 ```text
 python -m formal_agent start module.py investigation.json
 python -m formal_agent show investigation.json
+python -m formal_agent propose-ollama investigation.json
 python -m formal_agent answer investigation.json U1
 python -m formal_agent add-property investigation.json U1 --statement "La propriété attendue"
 python -m formal_agent accept-property investigation.json P1
@@ -26,6 +27,14 @@ La commande `answer` affiche la question puis demande une réponse ; `--answer "
 Une fois une question répondue, `add-property` enregistre une propriété candidate rédigée par l'utilisateur, liée à cette réponse. `accept-property` la retient explicitement comme spécification ; **cela ne la vérifie ni ne la démontre**. Les investigations au format initial sont migrées en mémoire à la lecture, puis enregistrées au nouveau format lors de la prochaine modification.
 
 `report` produit un rapport textuel déterministe sur les fonctions, les questions, les réponses, les propriétés et leurs limites ; il indique qu'aucune vérification du code cible n'a été effectuée. `show` conserve la sortie JSON complète.
+
+### Générer des propositions avec Ollama
+
+La commande facultative `propose-ollama` utilise `bonsai-2:4b`, qui doit déjà être installé sur un serveur Ollama accessible à `127.0.0.1:11434` depuis l'environnement où la commande s'exécute. Dans cette machine, lancer `wsl python3 -m formal_agent propose-ollama investigation.json` depuis la racine du dépôt utilise l'instance WSL. Vérifiez le modèle avec `wsl ollama list`.
+
+La commande transmet au serveur local les extraits des fonctions de premier niveau, y compris leurs docstrings, ainsi que les imports et appels syntaxiques. Ne l'utilisez qu'avec un serveur local de confiance et sur du code que vous acceptez de lui transmettre : le serveur peut conserver ses propres journaux. L'adaptateur désactive les proxies et les redirections, et ne permet pas de choisir un serveur distant. Il ne transmet pas les réponses utilisateur ; elles ne sont donc pas encore exploitées par le modèle.
+
+Le raisonnement étendu est désactivé pour ce modèle et la réponse est demandée sous forme JSON structurée. Les limites par défaut sont de 300 secondes, 1 400 tokens de sortie et 65 536 octets de contexte ; les options `--timeout` et `--max-tokens` permettent de changer les deux premières. Une sortie incomplète, invalide ou incompatible avec la source est signalée et n'est pas enregistrée. Chaque proposition est validée structurellement et reste candidate ou ouverte : sa pertinence, sa correction et l'absence d'injection ne sont pas garanties. Elle doit être revue par l'utilisateur avant toute acceptation.
 
 ### Importer des propositions
 
@@ -49,15 +58,15 @@ Un LLM ou un autre outil externe peut préparer localement un fichier JSON de pr
 }
 ```
 
-Les deux tableaux sont obligatoires, mais l'un d'eux peut être vide. Toute proposition doit concerner une fonction du modèle et la même empreinte source ; les doublons sont refusés. Les propriétés restent candidates, les inconnues restent ouvertes et leur origine est indiquée dans l'investigation. La structure valide ou le nom du fournisseur ne prouvent ni que les propositions viennent réellement d'un LLM ni qu'elles sont correctes : elles doivent être examinées par l'utilisateur. L'interface Python `ReasoningProvider` permet de brancher un fournisseur ; aucun appel réseau ni génération par LLM n'est effectué par l'import JSON.
+Les deux tableaux sont obligatoires, mais l'un d'eux peut être vide. Toute proposition doit concerner une fonction du modèle et la même empreinte source ; les doublons sont refusés. Les propriétés restent candidates, les inconnues restent ouvertes et leur origine est indiquée dans l'investigation. La structure valide ou le nom du fournisseur ne prouvent ni que les propositions importées viennent réellement d'un LLM ni qu'elles sont correctes : elles doivent être examinées par l'utilisateur. L'interface Python `ReasoningProvider` permet de brancher un fournisseur ; aucun appel réseau ni génération par LLM n'est effectué par l'import JSON.
 
-Le code, les docstrings et les réponses du fournisseur sont des données non fiables. Une intégration future doit isoler les instructions des données et ne pas suivre les instructions trouvées dans les sources ; la validation de structure seule ne garantit pas l'absence d'injections ou d'erreurs de raisonnement.
+Le code, les docstrings et les réponses du fournisseur sont des données non fiables. Les instructions système demandent au modèle de ne pas suivre les instructions trouvées dans les sources ; ni cette consigne ni la validation de structure ne garantissent l'absence d'injections ou d'erreurs de raisonnement.
 
-Une investigation est un instantané : `show` avertit si la source a changé ou n'est plus accessible, et `report` indique l'état de la source, tout en permettant de consulter l'état sauvegardé. Dans ces cas, les commandes qui modifient l'investigation refusent de l'enregistrer. Il faut créer une nouvelle investigation ; le transfert des réponses vers une nouvelle version du code n'est pas encore pris en charge.
+Une investigation est un instantané : `show` avertit si la source a changé ou n'est plus accessible, et `report` indique l'état de la source, tout en permettant de consulter l'état sauvegardé. Dans ces cas, les commandes qui modifient l'investigation refusent de l'enregistrer. Il faut créer une nouvelle investigation ; le transfert des réponses vers une nouvelle version du code n'est pas encore pris en charge. Une modification de l'état détectée pendant une commande bloque aussi sa sauvegarde ; cette vérification n'est pas un verrou transactionnel. N'exécutez pas plusieurs commandes d'écriture simultanément sur la même investigation.
 
 Sous Windows avec WSL et Python 3, les mêmes commandes peuvent être lancées depuis la racine du dépôt en remplaçant `python` par `wsl python3`.
 
-L'analyse utilise l'AST sans importer ni exécuter le fichier. Elle extrait les fonctions de premier niveau, leurs paramètres, les appels syntaxiques, les imports explicites au niveau du module et dans chaque fonction, ainsi que les lignes de `return` et `raise`, sans explorer les corps de fonctions ou classes imbriquées. Les imports et appels sont des observations syntaxiques : leur présence ne garantit pas leur exécution et ils ne constituent pas un graphe de dépendances résolu. L'analyse ne résout pas les appels dynamiques et ne couvre pas encore les méthodes, la génération automatique de propriétés, les scénarios, les tests du code analysé, les appels à un LLM ou les preuves formelles. Les questions sur le comportement et chaque paramètre ne tiennent pas encore compte des réponses présentes dans les autres sources. Une réponse enregistrée ne constitue pas une spécification validée.
+L'analyse utilise l'AST sans importer ni exécuter le fichier. Elle extrait les fonctions de premier niveau, leurs paramètres, les appels syntaxiques, les imports explicites au niveau du module et dans chaque fonction, ainsi que les lignes de `return` et `raise`, sans explorer les corps de fonctions ou classes imbriquées. Les imports et appels sont des observations syntaxiques : leur présence ne garantit pas leur exécution et ils ne constituent pas un graphe de dépendances résolu. L'analyse ne résout pas les appels dynamiques et ne couvre pas encore les méthodes, les scénarios, les tests du code analysé ou les preuves formelles. Les questions ne tiennent pas encore compte des réponses présentes dans les autres sources ou dans l'investigation. Une réponse enregistrée ne constitue pas une spécification validée.
 
 Les choix et prochaines étapes de cette tranche sont documentés dans [l'ADR 0001](docs/decisions/0001-first-investigation-slice.md).
 

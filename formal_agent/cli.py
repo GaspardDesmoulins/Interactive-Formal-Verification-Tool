@@ -7,10 +7,11 @@ from pathlib import Path
 
 from formal_agent.analysis import analyze
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
+from formal_agent.ollama import MODEL, OllamaProvider
 from formal_agent.properties import accept_property, add_property
 from formal_agent.reasoning import JsonFileProvider, apply_proposals
 from formal_agent.reporting import render_report
-from formal_agent.storage import create, load, save
+from formal_agent.storage import create, load, load_snapshot, save
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,6 +39,10 @@ def main(argv: list[str] | None = None) -> int:
     propose.add_argument("state", type=Path)
     propose.add_argument("proposals", type=Path)
     propose.add_argument("--reasoner", required=True, help="Name of the proposal provider")
+    ollama = commands.add_parser("propose-ollama", help="Generate proposals with local Ollama")
+    ollama.add_argument("state", type=Path)
+    ollama.add_argument("--timeout", type=int, default=300, help="Timeout in seconds (default: 300)")
+    ollama.add_argument("--max-tokens", type=int, default=1400, help="Output token budget (default: 1400)")
     args = parser.parse_args(argv)
 
     try:
@@ -56,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "report":
             print(render_report(load(args.state)), end="")
         else:
-            state = load(args.state)
+            state, revision = load_snapshot(args.state)
             warning = source_warning(state)
             if warning:
                 raise ValueError(f"{warning}. Start a new investigation.")
@@ -78,13 +83,17 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command == "accept-property":
                 accept_property(state, args.property_id)
                 message = f"Property {args.property_id} accepted as a specification, not proved."
-            else:
+            elif args.command == "import-proposals":
                 counts = apply_proposals(state, JsonFileProvider(args.proposals), args.reasoner)
                 message = f"Imported {counts[0]} candidate properties and {counts[1]} unknowns."
+            else:
+                provider = OllamaProvider(timeout=args.timeout, max_tokens=args.max_tokens)
+                counts = apply_proposals(state, provider, f"ollama:{MODEL}")
+                message = f"Generated {counts[0]} candidate properties and {counts[1]} unknowns."
             warning = source_warning(state)
             if warning:
                 raise ValueError(f"{warning}. Changes were not saved; start a new investigation.")
-            save(args.state, state)
+            save(args.state, state, revision)
             print(message)
     except (OSError, UnicodeError, SyntaxError, ValueError, EOFError) as error:
         print(f"Error: {error}", file=sys.stderr)
