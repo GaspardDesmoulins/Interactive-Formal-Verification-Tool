@@ -75,6 +75,11 @@ def render_report(state: dict[str, Any]) -> str:
                     f"  User-cited reference: {quote(reference['path'])}:{reference['line']}; "
                     f"SHA-256: {quote(reference['sha256'])}; interpretation not verified"
                 )
+        elif unknown["status"] == "duplicate":
+            lines.append(
+                f"  User-marked duplicate of: {quote(unknown['duplicate_of'])}; "
+                f"reason: {quote(unknown['duplicate_reason'])}"
+            )
         else:
             lines.append("  User answer: not provided")
     lines.extend(["", f"Properties ({len(state['properties'])})"])

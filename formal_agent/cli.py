@@ -7,6 +7,7 @@ from pathlib import Path
 
 from formal_agent.analysis import analyze
 from formal_agent.assumptions import add_assumption, link_property
+from formal_agent.duplicates import mark_duplicate, reopen_duplicate
 from formal_agent.evidence import capture_evidence, reference_at_line
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
 from formal_agent.ollama import MODEL, OllamaProvider
@@ -39,6 +40,14 @@ def main(argv: list[str] | None = None) -> int:
     done.add_argument("--allow-open", action="store_true", help="Explicitly retain open unknowns")
     restart = commands.add_parser("resume", help="Resume a paused or finished investigation")
     restart.add_argument("state", type=Path)
+    duplicate = commands.add_parser("mark-duplicate", help="Record a duplicate question decision")
+    duplicate.add_argument("state", type=Path)
+    duplicate.add_argument("unknown_id")
+    duplicate.add_argument("canonical_id")
+    duplicate.add_argument("--reason", required=True, help="Reason for considering them equivalent")
+    reopen = commands.add_parser("reopen-unknown", help="Undo a duplicate question decision")
+    reopen.add_argument("state", type=Path)
+    reopen.add_argument("unknown_id")
     answer = commands.add_parser("answer", help="Answer an open question")
     answer.add_argument("state", type=Path)
     answer.add_argument("unknown_id")
@@ -125,6 +134,14 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command == "resume":
                 resume(state)
                 message = "Investigation resumed."
+            elif args.command == "mark-duplicate":
+                require_active(state)
+                mark_duplicate(state, args.unknown_id, args.canonical_id, args.reason)
+                message = f"Recorded {args.unknown_id} as a duplicate of {args.canonical_id}."
+            elif args.command == "reopen-unknown":
+                require_active(state)
+                reopen_duplicate(state, args.unknown_id)
+                message = f"Reopened {args.unknown_id}."
             elif args.command == "add-property":
                 require_active(state)
                 property_id = add_property(state, args.unknown_id, args.statement)

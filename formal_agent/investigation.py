@@ -46,7 +46,7 @@ def create_investigation(model: dict[str, Any]) -> dict[str, Any]:
                 "answer": None,
             })
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "model": model,
         "unknowns": unknowns,
         "properties": [],

@@ -22,7 +22,7 @@ def validate(state: Any) -> None:
     if (
         not isinstance(state, dict)
         or type(state.get("schema_version")) is not int
-        or state["schema_version"] not in (1, 2, 3, 4, 5)
+        or state["schema_version"] not in (1, 2, 3, 4, 5, 6)
     ):
         raise ValueError("Invalid or unsupported investigation schema.")
     model = state.get("model")
@@ -90,8 +90,9 @@ def validate(state: Any) -> None:
             not isinstance(unknown_id, str)
             or not unknown_id
             or unknown_id in ids
-            or status not in ("open", "answered")
-            or (status == "open" and answer is not None)
+            or status not in ("open", "answered", "duplicate")
+            or (status == "duplicate" and state["schema_version"] < 6)
+            or (status in ("open", "duplicate") and answer is not None)
             or (status == "answered" and (not isinstance(answer, str) or not answer.strip()))
             or any(
                 not isinstance(unknown.get(key), str)
@@ -119,6 +120,28 @@ def validate(state: Any) -> None:
             ):
                 raise ValueError("Invalid answer reference.")
         ids.add(unknown_id)
+    unknowns_by_id = {unknown["id"]: unknown for unknown in unknowns}
+    for unknown in unknowns:
+        if unknown["status"] == "duplicate":
+            canonical_id = unknown.get("duplicate_of")
+            reason = unknown.get("duplicate_reason")
+            if (
+                not isinstance(canonical_id, str)
+                or canonical_id == unknown["id"]
+                or canonical_id not in unknowns_by_id
+                or unknowns_by_id[canonical_id]["status"] not in ("open", "answered")
+                or (
+                    unknown["function"], unknown["line"]
+                ) != (
+                    unknowns_by_id[canonical_id]["function"],
+                    unknowns_by_id[canonical_id]["line"],
+                )
+                or not isinstance(reason, str)
+                or not reason.strip()
+            ):
+                raise ValueError("Invalid duplicate decision.")
+        elif "duplicate_of" in unknown or "duplicate_reason" in unknown:
+            raise ValueError("Invalid duplicate decision.")
     if state["schema_version"] == 1:
         if "properties" in state:
             raise ValueError("Schema 1 must not contain properties.")
@@ -127,7 +150,6 @@ def validate(state: Any) -> None:
     if not isinstance(properties, list):
         raise ValueError("Invalid properties.")
     property_ids = set()
-    unknowns_by_id = {unknown["id"]: unknown for unknown in unknowns}
     for property_item in properties:
         if not isinstance(property_item, dict):
             raise ValueError("Invalid property.")
@@ -282,6 +304,8 @@ def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
     if state["schema_version"] == 4:
         state["schema_version"] = 5
         state["workflow"] = {"phase": "active", "pending_unknown_id": None}
+    if state["schema_version"] == 5:
+        state["schema_version"] = 6
     return state, hashlib.sha256(raw).hexdigest()
 
 
