@@ -86,6 +86,27 @@ class ReasoningTests(unittest.TestCase):
         self.assertIn("Duplicate", error)
         self.assertEqual(self.state.read_bytes(), original)
 
+    def test_answered_question_is_not_imported_again(self) -> None:
+        self.assertEqual(
+            self.run_cli("answer", str(self.state), "U2", "--answer", "nonnegative")[0], 0
+        )
+        original = self.state.read_bytes()
+        unknown = load(self.state)["unknowns"][1]
+        proposal = {
+            **self.data,
+            "properties": [],
+            "unknowns": [{
+                "function": "f", "line": 1,
+                "description": "Input constraints.",
+                "question": "  " + unknown["question"].upper() + "  ",
+                "impact": "Input domain.",
+            }],
+        }
+        code, _, error = self.import_data(proposal)
+        self.assertEqual(code, 1)
+        self.assertIn("Duplicate", error)
+        self.assertEqual(self.state.read_bytes(), original)
+
     def test_invalid_json_does_not_change_state(self) -> None:
         original = self.state.read_bytes()
         self.proposals.write_text("{", encoding="utf-8")

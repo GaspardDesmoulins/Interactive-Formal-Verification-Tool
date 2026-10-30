@@ -28,7 +28,14 @@ def apply_proposals(
     if not reasoner.strip():
         raise ValueError("The reasoner name must not be empty.")
     reasoner = reasoner.strip()
-    result = provider.propose(copy.deepcopy(state["model"]))
+    model = copy.deepcopy(state["model"])
+    model["investigation_context"] = copy.deepcopy({
+        "unknowns": state["unknowns"],
+        "properties": state["properties"],
+        "links": state["links"],
+        "assumptions": state["assumptions"],
+    })
+    result = provider.propose(model)
     if not isinstance(result, dict) or set(result) != {"source_sha256", "properties", "unknowns"}:
         raise ValueError("Proposal must contain source_sha256, properties and unknowns.")
     if result["source_sha256"] != state["model"]["sha256"]:
@@ -74,12 +81,14 @@ def apply_proposals(
     unknown_keys = set()
     for item in unknowns:
         check_item(item, {"function", "line", "description", "question", "impact"})
-        key = (item["function"], item["line"], item["question"].strip())
+        key = (
+            item["function"], item["line"],
+            " ".join(item["question"].split()).casefold(),
+        )
         if key in unknown_keys or any(
-            existing["origin"] == f"LLM proposal ({reasoner})"
-            and existing["function"] == key[0]
+            existing["function"] == key[0]
             and existing["line"] == key[1]
-            and existing["question"] == key[2]
+            and " ".join(existing["question"].split()).casefold() == key[2]
             for existing in state["unknowns"]
         ):
             raise ValueError("Duplicate proposed unknown.")
