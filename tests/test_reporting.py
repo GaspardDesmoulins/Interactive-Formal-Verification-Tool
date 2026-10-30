@@ -62,6 +62,28 @@ class ReportTests(unittest.TestCase):
         self.assertIn('User answer: "ok\\nVerification: proved"', report)
         self.assertNotIn("\nVerification: proved", report)
 
+    def test_report_contains_syntactic_observations_and_unverified_docstring(self) -> None:
+        self.source.write_text(
+            "import os\n"
+            "def f(x):\n"
+            "    '''Claimed requirement, not proof.'''\n"
+            "    import math\n"
+            "    if x < 0: raise ValueError()\n"
+            "    return math.sqrt(x)\n",
+            encoding="utf-8",
+        )
+        new_state = self.root / "new.json"
+        self.assertEqual(self.run_cli("start", str(self.source), str(new_state))[0], 0)
+        report = self.run_cli("report", str(new_state))[1]
+        self.assertIn('line 1: "import os"', report)
+        self.assertIn('Import at line 4: "import math"', report)
+        self.assertIn('Calls: "ValueError", "math.sqrt"', report)
+        self.assertIn("Return lines: 6", report)
+        self.assertIn("Raise lines: 5", report)
+        self.assertIn('Docstring (unverified): "Claimed requirement, not proof."', report)
+        self.assertIn("Description:", report)
+        self.assertIn("Impact:", report)
+
 
 if __name__ == "__main__":
     unittest.main()

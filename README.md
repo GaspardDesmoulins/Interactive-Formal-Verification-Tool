@@ -36,7 +36,7 @@ Une fois une question répondue, `add-property` enregistre une propriété candi
 
 L'investigation suit trois phases persistantes : `active`, `awaiting_answer` et `finished`. `ask` choisit une question ouverte en donnant priorité aux liens vers des propriétés acceptées, puis candidates ; `ask investigation.json U2` choisit explicitement une question. La réponse attendue remet l'investigation en phase active ; `resume` permet aussi d'abandonner l'attente ou de rouvrir une investigation terminée. `finish` refuse les questions ouvertes sauf avec `--allow-open` : celles-ci restent visibles dans le rapport et ne sont pas considérées comme résolues. Terminer l'investigation ne signifie pas que des propriétés sont prouvées.
 
-`report` produit un rapport textuel déterministe sur les fonctions, les questions, les réponses, les propriétés et leurs limites ; il indique qu'aucune vérification du code cible n'a été effectuée. `show` conserve la sortie JSON complète.
+`report` produit un rapport textuel déterministe sur les fonctions, imports, appels et lignes observés, les questions, réponses, propriétés, hypothèses et leurs limites ; il indique qu'aucune vérification du code cible n'a été effectuée. Les docstrings et les références sont indiquées comme non vérifiées. `show` conserve la sortie JSON complète.
 
 ### Générer des propositions avec Ollama
 

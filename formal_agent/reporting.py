@@ -29,14 +29,24 @@ def render_report(state: dict[str, Any]) -> str:
         "- No verification engine or tests of the target were run.",
         "- Accepted properties are specifications, not proofs.",
         "",
-        f"Functions ({len(model['functions'])})",
+        f"Module imports ({len(model.get('imports', []))})",
     ]
+    for imported in model.get("imports", []):
+        lines.append(f"- line {imported['line']}: {quote(imported['statement'])}")
+    lines.extend(["", f"Functions ({len(model['functions'])})"])
     for function in model["functions"]:
         parameters = ", ".join(quote(parameter) for parameter in function["parameters"])
         lines.append(
             f"- {quote(function['name'])} at line {function['line']}; "
             f"parameters: [{parameters}]"
         )
+        lines.append(f"  Calls: {', '.join(quote(call) for call in function['calls']) or 'none'}")
+        for imported in function.get("imports", []):
+            lines.append(f"  Import at line {imported['line']}: {quote(imported['statement'])}")
+        lines.append(f"  Return lines: {', '.join(map(str, function['return_lines'])) or 'none'}")
+        lines.append(f"  Raise lines: {', '.join(map(str, function['raise_lines'])) or 'none'}")
+        if function["docstring"] is not None:
+            lines.append(f"  Docstring (unverified): {quote(function['docstring'])}")
     evidence = model.get("evidence_sources", [])
     lines.extend(["", f"Reference files ({len(evidence)})"])
     for item in evidence:
@@ -50,7 +60,9 @@ def render_report(state: dict[str, Any]) -> str:
             f"{quote(unknown['function'])}:{unknown['line']}"
         )
         lines.append(f"  Origin: {quote(unknown['origin'])}")
+        lines.append(f"  Description: {quote(unknown['description'])}")
         lines.append(f"  Question: {quote(unknown['question'])}")
+        lines.append(f"  Impact: {quote(unknown['impact'])}")
         related = [
             link["property_id"] for link in state["links"] if link["unknown_id"] == unknown["id"]
         ]
