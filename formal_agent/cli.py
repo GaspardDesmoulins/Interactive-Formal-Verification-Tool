@@ -8,6 +8,7 @@ from pathlib import Path
 from formal_agent.analysis import analyze
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
 from formal_agent.properties import accept_property, add_property
+from formal_agent.reporting import render_report
 from formal_agent.storage import create, load, save
 
 
@@ -19,6 +20,8 @@ def main(argv: list[str] | None = None) -> int:
     start.add_argument("state", type=Path, help="New investigation JSON file")
     show = commands.add_parser("show", help="Display a saved investigation as JSON")
     show.add_argument("state", type=Path)
+    report = commands.add_parser("report", help="Render an investigation report")
+    report.add_argument("state", type=Path)
     answer = commands.add_parser("answer", help="Answer an open question")
     answer.add_argument("state", type=Path)
     answer.add_argument("unknown_id")
@@ -45,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
             if warning:
                 print(f"Warning: {warning}", file=sys.stderr)
             print(json.dumps(state, ensure_ascii=False, indent=2))
+        elif args.command == "report":
+            print(render_report(load(args.state)), end="")
         else:
             state = load(args.state)
             warning = source_warning(state)

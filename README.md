@@ -17,6 +17,7 @@ python -m formal_agent answer investigation.json U1
 python -m formal_agent add-property investigation.json U1 --statement "La propriété attendue"
 python -m formal_agent accept-property investigation.json P1
 python -m formal_agent show investigation.json
+python -m formal_agent report investigation.json
 python -m unittest discover -s tests
 ```
 
@@ -24,7 +25,9 @@ La commande `answer` affiche la question puis demande une réponse ; `--answer "
 
 Une fois une question répondue, `add-property` enregistre une propriété candidate rédigée par l'utilisateur, liée à cette réponse. `accept-property` la retient explicitement comme spécification ; **cela ne la vérifie ni ne la démontre**. Les investigations au format initial sont migrées en mémoire à la lecture, puis enregistrées au nouveau format lors de la prochaine modification.
 
-Une investigation est un instantané : `show` avertit si la source a changé ou n'est plus accessible, tout en permettant de consulter l'état sauvegardé. Dans ces cas, les commandes qui modifient l'investigation refusent de l'enregistrer. Il faut créer une nouvelle investigation ; le transfert des réponses vers une nouvelle version du code n'est pas encore pris en charge.
+`report` produit un rapport textuel déterministe sur les fonctions, les questions, les réponses, les propriétés et leurs limites ; il indique qu'aucune vérification du code cible n'a été effectuée. `show` conserve la sortie JSON complète.
+
+Une investigation est un instantané : `show` avertit si la source a changé ou n'est plus accessible, et `report` indique l'état de la source, tout en permettant de consulter l'état sauvegardé. Dans ces cas, les commandes qui modifient l'investigation refusent de l'enregistrer. Il faut créer une nouvelle investigation ; le transfert des réponses vers une nouvelle version du code n'est pas encore pris en charge.
 
 Sous Windows avec WSL et Python 3, les mêmes commandes peuvent être lancées depuis la racine du dépôt en remplaçant `python` par `wsl python3`.
 
