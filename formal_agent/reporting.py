@@ -69,6 +69,12 @@ def render_report(state: dict[str, Any]) -> str:
         lines.append(f"  Related properties: {', '.join(related) if related else 'none recorded'}")
         if unknown["status"] == "answered":
             lines.append(f"  User answer: {quote(unknown['answer'])}")
+            reference = unknown.get("answer_reference")
+            if reference is not None:
+                lines.append(
+                    f"  User-cited reference: {quote(reference['path'])}:{reference['line']}; "
+                    f"SHA-256: {quote(reference['sha256'])}; interpretation not verified"
+                )
         else:
             lines.append("  User answer: not provided")
     lines.extend(["", f"Properties ({len(state['properties'])})"])

@@ -88,6 +88,53 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.start(), 1)
         self.assertFalse(self.state.exists())
 
+    def test_user_can_cite_reference_line_without_automatic_acceptance(self) -> None:
+        self.assertEqual(self.start(), 0)
+        code, _, error = self.cli(
+            "answer", str(self.state), "U2", "--answer", "Only positive values",
+            "--reference", str(self.docs), "--line", "1",
+        )
+        self.assertEqual(code, 0, error)
+        state = load(self.state)
+        citation = state["unknowns"][1]["answer_reference"]
+        self.assertEqual(citation["path"], str(self.docs.resolve()))
+        self.assertEqual(citation["line"], 1)
+        self.assertEqual(citation["sha256"], state["model"]["evidence_sources"][0]["sha256"])
+        self.assertEqual(state["properties"], [])
+        report = self.cli("report", str(self.state))[1]
+        self.assertIn("User-cited reference:", report)
+        self.assertIn("interpretation not verified", report)
+        self.assertIn("Verification results: none", report)
+
+    def test_invalid_citation_does_not_save_answer(self) -> None:
+        self.assertEqual(self.start(), 0)
+        original = self.state.read_bytes()
+        for options in [
+            ("--reference", str(self.docs)),
+            ("--line", "1"),
+            ("--reference", str(self.source), "--line", "1"),
+            ("--reference", str(self.docs), "--line", "0"),
+            ("--reference", str(self.docs), "--line", "2"),
+        ]:
+            result, _, _ = self.cli(
+                "answer", str(self.state), "U2", "--answer", "positive", *options
+            )
+            self.assertEqual(result, 1)
+            self.assertEqual(self.state.read_bytes(), original)
+
+    def test_corrupted_citation_is_rejected(self) -> None:
+        self.assertEqual(self.start(), 0)
+        self.assertEqual(self.cli(
+            "answer", str(self.state), "U2", "--answer", "positive",
+            "--reference", str(self.docs), "--line", "1",
+        )[0], 0)
+        state = load(self.state)
+        state["unknowns"][1]["answer_reference"]["sha256"] = "0" * 64
+        self.state.write_text(json.dumps(state), encoding="utf-8")
+        code, _, error = self.cli("show", str(self.state))
+        self.assertEqual(code, 1)
+        self.assertIn("Invalid answer reference", error)
+
     def test_evidence_is_passed_as_untrusted_text_to_ollama(self) -> None:
         self.assertEqual(self.start(), 0)
         proposal = {

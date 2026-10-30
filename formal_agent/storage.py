@@ -41,6 +41,7 @@ def validate(state: Any) -> None:
     if not isinstance(references, list):
         raise ValueError("Invalid evidence sources.")
     reference_paths = set()
+    references_by_path = {}
     for reference in references:
         if (
             not isinstance(reference, dict)
@@ -55,6 +56,7 @@ def validate(state: Any) -> None:
         ):
             raise ValueError("Invalid evidence source.")
         reference_paths.add(reference["path"])
+        references_by_path[reference["path"]] = reference["sha256"]
     for function in model["functions"]:
         if not isinstance(function, dict):
             raise ValueError("Invalid function observation.")
@@ -103,6 +105,19 @@ def validate(state: Any) -> None:
             )
         ):
             raise ValueError("Invalid unknown.")
+        if "answer_reference" in unknown:
+            reference = unknown["answer_reference"]
+            if (
+                status != "answered"
+                or not isinstance(reference, dict)
+                or set(reference) != {"path", "sha256", "line"}
+                or not isinstance(reference["path"], str)
+                or reference["path"] not in references_by_path
+                or reference["sha256"] != references_by_path[reference["path"]]
+                or type(reference["line"]) is not int
+                or reference["line"] < 1
+            ):
+                raise ValueError("Invalid answer reference.")
         ids.add(unknown_id)
     if state["schema_version"] == 1:
         if "properties" in state:

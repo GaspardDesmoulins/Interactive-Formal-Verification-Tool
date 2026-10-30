@@ -7,7 +7,7 @@ from pathlib import Path
 
 from formal_agent.analysis import analyze
 from formal_agent.assumptions import add_assumption, link_property
-from formal_agent.evidence import capture_evidence
+from formal_agent.evidence import capture_evidence, reference_at_line
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
 from formal_agent.ollama import MODEL, OllamaProvider
 from formal_agent.properties import accept_property, add_property
@@ -43,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     answer.add_argument("state", type=Path)
     answer.add_argument("unknown_id")
     answer.add_argument("--answer", help="Answer text; prompt if omitted")
+    answer.add_argument("--reference", type=Path, help="Previously recorded reference file")
+    answer.add_argument("--line", type=int, help="Line containing supporting text")
     add = commands.add_parser("add-property", help="Propose a property from an answer")
     add.add_argument("state", type=Path)
     add.add_argument("unknown_id")
@@ -92,6 +94,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError(f"{warning}. Start a new investigation.")
             if args.command == "answer":
                 prepare_answer(state, args.unknown_id)
+                if (args.reference is None) != (args.line is None):
+                    raise ValueError("--reference and --line must be provided together.")
+                reference = None
+                if args.reference is not None and args.line is not None:
+                    reference = reference_at_line(state["model"], args.reference, args.line)
                 unknown = next(
                     (item for item in state["unknowns"] if item["id"] == args.unknown_id),
                     None,
@@ -102,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError(f"Unknown {args.unknown_id} is already resolved.")
                 text = args.answer if args.answer is not None else input(f"{unknown['question']}\n> ")
                 resolve_unknown(state, args.unknown_id, text)
+                if reference is not None:
+                    unknown["answer_reference"] = reference
                 answer_recorded(state)
                 message = f"Answer recorded for {args.unknown_id}."
             elif args.command == "ask":

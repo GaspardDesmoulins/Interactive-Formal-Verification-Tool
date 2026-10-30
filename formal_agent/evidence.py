@@ -50,3 +50,19 @@ def evidence_context(model: dict[str, Any]) -> list[dict[str, str]]:
             raise ValueError(f"Evidence changed before the reasoning request: {path}")
         result.append({"name": path.name, "sha256": digest, "text": content})
     return result
+
+
+def reference_at_line(model: dict[str, Any], path: Path, line: int) -> dict[str, Any]:
+    resolved = str(path.resolve())
+    reference = next(
+        (item for item in model.get("evidence_sources", []) if item["path"] == resolved),
+        None,
+    )
+    if reference is None:
+        raise ValueError(f"Reference was not included when the investigation started: {resolved}")
+    text, digest = read_evidence(Path(resolved))
+    if digest != reference["sha256"]:
+        raise ValueError(f"Evidence has changed: {resolved}")
+    if line < 1 or line > len(text.splitlines()):
+        raise ValueError(f"Reference line {line} does not exist: {resolved}")
+    return {"path": resolved, "sha256": digest, "line": line}
