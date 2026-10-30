@@ -15,6 +15,7 @@ from formal_agent.ollama import MODEL, SUPPORTED_MODELS, OllamaProvider
 from formal_agent.properties import accept_property, add_property
 from formal_agent.reasoning import JsonFileProvider, apply_proposals
 from formal_agent.reporting import render_report
+from formal_agent.scenario_suggestions import decide_suggestion, suggest_scenarios
 from formal_agent.scenarios import ASSESSMENTS, add_scenario, review_scenario
 from formal_agent.storage import create, load, load_snapshot, save
 from formal_agent.workflow import (
@@ -104,6 +105,23 @@ def main(argv: list[str] | None = None) -> int:
     review.add_argument("--reason", required=True, help="Reason for the user assessment")
     review.add_argument("--reference", type=Path, help="Previously recorded reference file")
     review.add_argument("--line", type=int, help="Line containing possibly relevant text")
+    suggest = commands.add_parser(
+        "suggest-scenarios", help="Suggest parameter boundaries and search references as text"
+    )
+    suggest.add_argument("state", type=Path)
+    suggest.add_argument("property_id")
+    accept_suggestion = commands.add_parser(
+        "accept-suggestion", help="Review and register a scenario suggestion"
+    )
+    accept_suggestion.add_argument("state", type=Path)
+    accept_suggestion.add_argument("suggestion_id")
+    accept_suggestion.add_argument("--expected", required=True, help="User-defined expected outcome")
+    accept_suggestion.add_argument("--reason", required=True, help="Reason for accepting")
+    accept_suggestion.add_argument("--description", help="User-revised scenario description")
+    reject_suggestion = commands.add_parser("reject-suggestion", help="Reject a scenario suggestion")
+    reject_suggestion.add_argument("state", type=Path)
+    reject_suggestion.add_argument("suggestion_id")
+    reject_suggestion.add_argument("--reason", required=True, help="Reason for rejecting")
     propose = commands.add_parser("import-proposals", help="Import untrusted LLM proposals")
     propose.add_argument("state", type=Path)
     propose.add_argument("proposals", type=Path)
@@ -183,9 +201,11 @@ def main(argv: list[str] | None = None) -> int:
                 )
             elif args.command == "finish":
                 counts = finish(state, args.allow_open)
+                pending = sum(not item["decisions"] for item in state["scenario_suggestions"])
                 message = (
                     f"Investigation finished; {counts[0]} questions and "
-                    f"{counts[1]} disagreements remain open."
+                    f"{counts[1]} disagreements remain open; "
+                    f"{pending} scenario suggestions await review."
                 )
             elif args.command == "resume":
                 resume(state)
@@ -234,6 +254,28 @@ def main(argv: list[str] | None = None) -> int:
                     state, args.scenario_id, args.assessment, args.reason, args.reference, args.line
                 )
                 message = f"User assessment for {args.scenario_id} recorded; coverage not verified."
+            elif args.command == "suggest-scenarios":
+                require_active(state)
+                added, existing = suggest_scenarios(state, args.property_id)
+                changed = bool(added)
+                message = (
+                    f"Recorded {added} scenario suggestions; {existing} already recorded. "
+                    "Text matches are unverified hints, not coverage."
+                )
+            elif args.command == "accept-suggestion":
+                require_active(state)
+                scenario_id = decide_suggestion(
+                    state, args.suggestion_id, "accepted", args.reason,
+                    expected=args.expected, description=args.description,
+                )
+                message = (
+                    f"Suggestion {args.suggestion_id} accepted as scenario {scenario_id}; "
+                    "coverage not verified."
+                )
+            elif args.command == "reject-suggestion":
+                require_active(state)
+                decide_suggestion(state, args.suggestion_id, "rejected", args.reason)
+                message = f"Suggestion {args.suggestion_id} rejected; user reason recorded."
             elif args.command == "import-proposals":
                 require_active(state)
                 proposal_result = apply_proposals(state, JsonFileProvider(args.proposals), args.reasoner)

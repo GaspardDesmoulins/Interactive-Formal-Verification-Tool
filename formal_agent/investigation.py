@@ -46,7 +46,7 @@ def create_investigation(model: dict[str, Any]) -> dict[str, Any]:
                 "answer": None,
             })
     return {
-        "schema_version": 8,
+        "schema_version": 9,
         "model": model,
         "unknowns": unknowns,
         "properties": [],
@@ -55,6 +55,7 @@ def create_investigation(model: dict[str, Any]) -> dict[str, Any]:
         "workflow": {"phase": "active", "pending_unknown_id": None},
         "conflicts": [],
         "scenarios": [],
+        "scenario_suggestions": [],
     }
 
 

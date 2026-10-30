@@ -68,6 +68,7 @@ class ConflictTests(unittest.TestCase):
         state["schema_version"] = 6
         del state["conflicts"]
         del state["scenarios"]
+        del state["scenario_suggestions"]
         self.state.write_text(json.dumps(state), encoding="utf-8")
         original = self.state.read_bytes()
         self.assertEqual(load(self.state)["conflicts"], [])
@@ -75,7 +76,7 @@ class ConflictTests(unittest.TestCase):
         self.assertEqual(self.cli(
             "record-conflict", str(self.state), "U1", "--description", "conflict"
         )[0], 0)
-        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8"))["schema_version"], 8)
+        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8"))["schema_version"], 9)
 
 
 if __name__ == "__main__":

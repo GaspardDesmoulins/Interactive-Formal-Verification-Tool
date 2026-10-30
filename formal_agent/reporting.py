@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from formal_agent.investigation import source_warning
+from formal_agent.scenario_suggestions import suggestion_description
 
 
 def quote(value: str) -> str:
@@ -29,6 +30,7 @@ def render_report(state: dict[str, Any]) -> str:
         "- No verification engine or tests of the target were run.",
         "- Accepted properties are specifications, not proofs.",
         "- Scenario assessments and citations do not establish coverage or gaps.",
+        "- Suggestions are limited boundary templates, not an exhaustive scenario search.",
         "- LLM context completeness is not independently verified; servers may truncate inputs.",
         "",
         f"Module imports ({len(model.get('imports', []))})",
@@ -122,6 +124,12 @@ def render_report(state: dict[str, Any]) -> str:
             f"  Origin: user; property: {scenario['property_id']}; "
             f"expected: {quote(scenario['expected'])}"
         )
+        source_suggestion = next((
+            item["id"] for item in state["scenario_suggestions"]
+            if item["decisions"] and item["decisions"][-1]["scenario_id"] == scenario["id"]
+        ), None)
+        if source_suggestion is not None:
+            lines.append(f"  Accepted from suggestion: {source_suggestion}; relevance not verified")
         for index, review in enumerate(reviews, 1):
             lines.append(
                 f"  Review {index}: {review['assessment']}; user reason: "
@@ -133,6 +141,36 @@ def render_report(state: dict[str, Any]) -> str:
                     f"    User-cited reference: {quote(reference['path'])}:{reference['line']}; "
                     f"SHA-256: {quote(reference['sha256'])}; relevance not verified"
                 )
+    lines.extend(["", f"Scenario suggestions ({len(state['scenario_suggestions'])})"])
+    for suggestion in state["scenario_suggestions"]:
+        decisions = suggestion["decisions"]
+        status = decisions[-1]["decision"] if decisions else "pending review"
+        lines.append(
+            f"- {suggestion['id']} [{status}] {quote(suggestion_description(suggestion))}"
+        )
+        lines.append(
+            f"  Origin: parameter boundary template; property: {suggestion['property_id']}; "
+            f"function: {quote(suggestion['function']['name'])}:{suggestion['function']['line']}"
+        )
+        lines.append("  Expected outcome, applicability and coverage: not established")
+        count = len(suggestion["evidence_scope"])
+        lines.append(f"  Declared references searched: {count}; same-line literal text match only")
+        if not count:
+            lines.append("  No references were declared; no reference search was possible.")
+        elif not suggestion["matches"]:
+            lines.append("  No same-line text match found; this is not evidence of a coverage gap.")
+        for match in suggestion["matches"]:
+            lines.append(
+                f"  Text match: {quote(match['path'])}:{match['line']}; "
+                f"SHA-256: {quote(match['sha256'])}; relevance and coverage not verified"
+            )
+        if suggestion["matches_truncated"]:
+            lines.append("  Additional text matches omitted; the displayed list is limited.")
+        for index, decision in enumerate(decisions, 1):
+            lines.append(
+                f"  Decision {index}: {decision['decision']}; user reason: "
+                f"{quote(decision['reason'])}; scenario: {decision['scenario_id'] or 'none'}"
+            )
     lines.extend(["", f"Disagreements ({len(state['conflicts'])})"])
     for conflict in state["conflicts"]:
         lines.append(

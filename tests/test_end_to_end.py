@@ -42,7 +42,7 @@ def respond(request, timeout):
     context = json.loads(payload["messages"][1]["content"])
     assert "IGNORE PREVIOUS INSTRUCTIONS" in context["functions"][0]["source"]
     assert "IGNORE PREVIOUS INSTRUCTIONS" not in payload["messages"][0]["content"]
-    assert context["evidence"][0]["text"] == "Amounts must be positive."
+    assert context["evidence"][0]["text"] == "Amounts must be positive.\\n# amount 0\\n"
     return Response()
 
 with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
@@ -68,7 +68,7 @@ class EndToEndTests(unittest.TestCase):
                 f'open({str(marker)!r}, "w").write("executed")\n',
                 encoding="utf-8",
             )
-            evidence.write_text("Amounts must be positive.", encoding="utf-8")
+            evidence.write_text("Amounts must be positive.\n# amount 0\n", encoding="utf-8")
 
             def invoke(*args: str) -> subprocess.CompletedProcess[str]:
                 return subprocess.run(
@@ -125,6 +125,10 @@ class EndToEndTests(unittest.TestCase):
             success("review-scenario", str(state), "S1", "--assessment", "reference_found",
                     "--reason", "Requirement may be relevant", "--reference", str(evidence),
                     "--line", "1")
+            success("suggest-scenarios", str(state), "P1")
+            success("reject-suggestion", str(state), "T3", "--reason", "Needs more context")
+            success("accept-suggestion", str(state), "T3", "--expected", "Reject the amount",
+                    "--reason", "Reviewed the boundary")
             success("record-conflict", str(state), unknown_id, "--description", "Sources differ.")
             success("resolve-conflict", str(state), "C1", "--resolution", "Requirements prevail.")
             success("finish", str(state), "--allow-open")
@@ -138,6 +142,11 @@ class EndToEndTests(unittest.TestCase):
             self.assertIn("Review 1: potential_gap", report)
             self.assertIn("Review 2: reference_found", report)
             self.assertIn("relevance not verified", report)
+            self.assertIn("T3 [accepted]", report)
+            self.assertIn("Decision 1: rejected", report)
+            self.assertIn("Decision 2: accepted", report)
+            self.assertIn("Accepted from suggestion: T3", report)
+            self.assertIn("same-line literal text match only", report)
             self.assertIn(f'User-marked duplicate of: "{unknown_id}"', report)
             self.assertIn("verification: not performed", report)
             self.assertIn("Verification results: none", report)

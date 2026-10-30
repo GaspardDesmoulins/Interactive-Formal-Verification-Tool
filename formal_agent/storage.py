@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from formal_agent.scenario_suggestions import MAX_MATCHES, VALUES, property_function
 from formal_agent.scenarios import ASSESSMENTS
 
 
@@ -44,11 +45,13 @@ def validate(state: Any) -> None:
     if (
         not isinstance(state, dict)
         or type(state.get("schema_version")) is not int
-        or state["schema_version"] not in (1, 2, 3, 4, 5, 6, 7, 8)
+        or state["schema_version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9)
     ):
         raise ValueError("Invalid or unsupported investigation schema.")
     if state["schema_version"] < 8 and "scenarios" in state:
         raise ValueError("Legacy schemas must not contain scenarios.")
+    if state["schema_version"] < 9 and "scenario_suggestions" in state:
+        raise ValueError("Legacy schemas must not contain scenario suggestions.")
     model = state.get("model")
     unknowns = state.get("unknowns")
     if (
@@ -393,6 +396,92 @@ def validate(state: Any) -> None:
                 )
             ):
                 raise ValueError("Invalid scenario review or reference.")
+    if state["schema_version"] == 8:
+        return
+    suggestions = state.get("scenario_suggestions")
+    if not isinstance(suggestions, list):
+        raise ValueError("Invalid scenario suggestions.")
+    suggestion_ids = set()
+    suggestion_keys = set()
+    accepted_scenarios = set()
+    scenarios_by_id = {item["id"]: item for item in scenarios}
+    for suggestion in suggestions:
+        if not isinstance(suggestion, dict) or set(suggestion) != {
+            "id", "property_id", "function", "parameter", "value", "evidence_scope",
+            "matches", "matches_truncated", "decisions"
+        }:
+            raise ValueError("Invalid scenario suggestion.")
+        suggestion_id = suggestion["id"]
+        property_id = suggestion["property_id"]
+        parameter = suggestion["parameter"]
+        value = suggestion["value"]
+        if (
+            not isinstance(suggestion_id, str)
+            or not suggestion_id.startswith("T")
+            or not suggestion_id[1:].isascii()
+            or not suggestion_id[1:].isdigit()
+            or suggestion_id[1] == "0"
+            or suggestion_id in suggestion_ids
+            or not isinstance(property_id, str)
+            or property_id not in properties_by_id
+            or not isinstance(parameter, str)
+            or not parameter.isidentifier()
+            or not isinstance(value, str)
+            or value not in VALUES
+            or (property_id, parameter, value) in suggestion_keys
+            or suggestion["evidence_scope"] != references
+            or not isinstance(suggestion["matches"], list)
+            or len(suggestion["matches"]) > MAX_MATCHES
+            or type(suggestion["matches_truncated"]) is not bool
+            or (suggestion["matches_truncated"] and len(suggestion["matches"]) != MAX_MATCHES)
+            or not isinstance(suggestion["decisions"], list)
+        ):
+            raise ValueError("Invalid scenario suggestion or provenance.")
+        function = property_function(state, properties_by_id[property_id])
+        if (
+            not isinstance(suggestion["function"], dict)
+            or set(suggestion["function"]) != {"name", "line"}
+            or not isinstance(suggestion["function"]["name"], str)
+            or type(suggestion["function"]["line"]) is not int
+            or suggestion["function"] != {"name": function["name"], "line": function["line"]}
+            or parameter not in function["parameters"]
+        ):
+            raise ValueError("Scenario suggestion does not match the property function.")
+        suggestion_ids.add(suggestion_id)
+        suggestion_keys.add((property_id, parameter, value))
+        match_keys = set()
+        for match in suggestion["matches"]:
+            if not valid_reference(match, references_by_path) or (
+                match["path"], match["line"]
+            ) in match_keys:
+                raise ValueError("Invalid scenario suggestion reference.")
+            match_keys.add((match["path"], match["line"]))
+        for index, decision in enumerate(suggestion["decisions"]):
+            if not isinstance(decision, dict) or set(decision) != {
+                "decision", "origin", "reason", "scenario_id"
+            }:
+                raise ValueError("Invalid scenario suggestion decision.")
+            scenario_id = decision["scenario_id"]
+            if (
+                decision["decision"] not in ("accepted", "rejected")
+                or decision["origin"] != "user"
+                or not isinstance(decision["reason"], str)
+                or not decision["reason"].strip()
+                or (decision["decision"] == "rejected" and scenario_id is not None)
+                or (
+                    decision["decision"] == "accepted"
+                    and (
+                        index != len(suggestion["decisions"]) - 1
+                        or not isinstance(scenario_id, str)
+                        or scenario_id not in scenarios_by_id
+                        or scenarios_by_id[scenario_id]["property_id"] != property_id
+                        or scenario_id in accepted_scenarios
+                    )
+                )
+            ):
+                raise ValueError("Invalid scenario suggestion decision or link.")
+            if decision["decision"] == "accepted":
+                accepted_scenarios.add(scenario_id)
 
 
 def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
@@ -422,6 +511,9 @@ def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
     if state["schema_version"] == 7:
         state["schema_version"] = 8
         state["scenarios"] = []
+    if state["schema_version"] == 8:
+        state["schema_version"] = 9
+        state["scenario_suggestions"] = []
     return state, hashlib.sha256(raw).hexdigest()
 
 
