@@ -22,7 +22,7 @@ def validate(state: Any) -> None:
     if (
         not isinstance(state, dict)
         or type(state.get("schema_version")) is not int
-        or state["schema_version"] not in (1, 2, 3)
+        or state["schema_version"] not in (1, 2, 3, 4)
     ):
         raise ValueError("Invalid or unsupported investigation schema.")
     model = state.get("model")
@@ -125,7 +125,7 @@ def validate(state: Any) -> None:
                 or unknowns_by_id[source_id]["status"] != "answered"
             ):
                 raise ValueError("Invalid property or provenance.")
-        elif property_item.get("origin") == "llm" and state["schema_version"] == 3:
+        elif property_item.get("origin") == "llm" and state["schema_version"] >= 3:
             function = property_item.get("source_function")
             reasoner = property_item.get("reasoner")
             if (
@@ -143,6 +143,69 @@ def validate(state: Any) -> None:
         else:
             raise ValueError("Invalid property or provenance.")
         property_ids.add(property_id)
+    if state["schema_version"] < 4:
+        if "links" in state or "assumptions" in state:
+            raise ValueError("Legacy schemas must not contain links or assumptions.")
+        return
+    links = state.get("links")
+    assumptions = state.get("assumptions")
+    if not isinstance(links, list) or not isinstance(assumptions, list):
+        raise ValueError("Invalid links or assumptions.")
+    properties_by_id = {item["id"]: item for item in properties}
+    link_ids = set()
+    for link in links:
+        if not isinstance(link, dict) or set(link) != {"unknown_id", "property_id"}:
+            raise ValueError("Invalid property link.")
+        unknown_id = link["unknown_id"]
+        property_id = link["property_id"]
+        if (
+            not isinstance(unknown_id, str)
+            or not isinstance(property_id, str)
+            or unknown_id not in unknowns_by_id
+            or property_id not in properties_by_id
+            or (unknown_id, property_id) in link_ids
+        ):
+            raise ValueError("Invalid property link.")
+        unknown = unknowns_by_id[unknown_id]
+        prop = properties_by_id[property_id]
+        if prop["origin"] == "user":
+            source = unknowns_by_id[prop["source_unknown_id"]]
+            target = (source["function"], source["line"])
+        else:
+            target = (prop["source_function"]["name"], prop["source_function"]["line"])
+        if (unknown["function"], unknown["line"]) != target:
+            raise ValueError("Property link refers to different functions.")
+        link_ids.add((unknown_id, property_id))
+    for prop in properties:
+        if prop["origin"] == "user" and (prop["source_unknown_id"], prop["id"]) not in link_ids:
+            raise ValueError("User property is missing its source link.")
+    assumption_ids = set()
+    for assumption in assumptions:
+        if not isinstance(assumption, dict):
+            raise ValueError("Invalid assumption.")
+        assumption_id = assumption.get("id")
+        statement = assumption.get("statement")
+        unknown_id = assumption.get("source_unknown_id")
+        property_id = assumption.get("property_id")
+        if (
+            not isinstance(assumption_id, str)
+            or not assumption_id.startswith("A")
+            or not assumption_id[1:].isascii()
+            or not assumption_id[1:].isdigit()
+            or int(assumption_id[1:]) < 1
+            or str(int(assumption_id[1:])) != assumption_id[1:]
+            or assumption_id in assumption_ids
+            or not isinstance(statement, str)
+            or not statement.strip()
+            or assumption.get("status") != "assumed"
+            or assumption.get("origin") != "user"
+            or not isinstance(unknown_id, str)
+            or not isinstance(property_id, str)
+            or (unknown_id, property_id) not in link_ids
+            or unknowns_by_id[unknown_id]["status"] != "answered"
+        ):
+            raise ValueError("Invalid assumption or provenance.")
+        assumption_ids.add(assumption_id)
 
 
 def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
@@ -154,6 +217,13 @@ def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
         state["properties"] = []
     if state["schema_version"] == 2:
         state["schema_version"] = 3
+    if state["schema_version"] == 3:
+        state["schema_version"] = 4
+        state["links"] = [
+            {"unknown_id": item["source_unknown_id"], "property_id": item["id"]}
+            for item in state["properties"] if item["origin"] == "user"
+        ]
+        state["assumptions"] = []
     return state, hashlib.sha256(raw).hexdigest()
 
 

@@ -43,7 +43,14 @@ def create_investigation(model: dict[str, Any]) -> dict[str, Any]:
                 "status": "open",
                 "answer": None,
             })
-    return {"schema_version": 3, "model": model, "unknowns": unknowns, "properties": []}
+    return {
+        "schema_version": 4,
+        "model": model,
+        "unknowns": unknowns,
+        "properties": [],
+        "links": [],
+        "assumptions": [],
+    }
 
 
 def source_warning(state: dict[str, Any]) -> str | None:

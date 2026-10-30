@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from formal_agent.analysis import analyze
+from formal_agent.assumptions import add_assumption, link_property
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
 from formal_agent.ollama import MODEL, OllamaProvider
 from formal_agent.properties import accept_property, add_property
@@ -35,6 +36,15 @@ def main(argv: list[str] | None = None) -> int:
     accept = commands.add_parser("accept-property", help="Accept a candidate specification")
     accept.add_argument("state", type=Path)
     accept.add_argument("property_id")
+    link = commands.add_parser("link-property", help="Link an unknown to a property")
+    link.add_argument("state", type=Path)
+    link.add_argument("unknown_id")
+    link.add_argument("property_id")
+    assume = commands.add_parser("add-assumption", help="Record an explicit assumption")
+    assume.add_argument("state", type=Path)
+    assume.add_argument("unknown_id")
+    assume.add_argument("property_id")
+    assume.add_argument("--statement", required=True, help="Assumption based on the answer")
     propose = commands.add_parser("import-proposals", help="Import untrusted LLM proposals")
     propose.add_argument("state", type=Path)
     propose.add_argument("proposals", type=Path)
@@ -83,6 +93,14 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command == "accept-property":
                 accept_property(state, args.property_id)
                 message = f"Property {args.property_id} accepted as a specification, not proved."
+            elif args.command == "link-property":
+                link_property(state, args.unknown_id, args.property_id)
+                message = f"Linked {args.unknown_id} to {args.property_id}."
+            elif args.command == "add-assumption":
+                assumption_id = add_assumption(
+                    state, args.unknown_id, args.property_id, args.statement
+                )
+                message = f"Assumption {assumption_id} recorded; it has not been verified."
             elif args.command == "import-proposals":
                 counts = apply_proposals(state, JsonFileProvider(args.proposals), args.reasoner)
                 message = f"Imported {counts[0]} candidate properties and {counts[1]} unknowns."

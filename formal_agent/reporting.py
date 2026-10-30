@@ -43,6 +43,10 @@ def render_report(state: dict[str, Any]) -> str:
         )
         lines.append(f"  Origin: {quote(unknown['origin'])}")
         lines.append(f"  Question: {quote(unknown['question'])}")
+        related = [
+            link["property_id"] for link in state["links"] if link["unknown_id"] == unknown["id"]
+        ]
+        lines.append(f"  Related properties: {', '.join(related) if related else 'none recorded'}")
         if unknown["status"] == "answered":
             lines.append(f"  User answer: {quote(unknown['answer'])}")
         else:
@@ -67,5 +71,14 @@ def render_report(state: dict[str, Any]) -> str:
             lines.append("  Accepted by: user; verification: not performed")
         else:
             lines.append("  Acceptance: pending; verification: not performed")
+    lines.extend(["", f"Assumptions ({len(state['assumptions'])})"])
+    for assumption in state["assumptions"]:
+        lines.append(
+            f"- {assumption['id']} [assumed] {quote(assumption['statement'])}"
+        )
+        lines.append(
+            f"  Origin: user; source answer: {quote(assumption['source_unknown_id'])}; "
+            f"property: {assumption['property_id']}; verification: not performed"
+        )
     lines.extend(["", "Verification results: none", ""])
     return "\n".join(lines)

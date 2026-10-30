@@ -32,6 +32,7 @@ def add_property(state: dict[str, Any], unknown_id: str, statement: str) -> str:
         "source_unknown_id": unknown_id,
         "accepted_by": None,
     })
+    state["links"].append({"unknown_id": unknown_id, "property_id": property_id})
     return property_id
 
 
