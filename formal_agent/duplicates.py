@@ -3,6 +3,26 @@
 from typing import Any
 
 
+def question_key(unknown: dict[str, Any]) -> tuple[str, int, str]:
+    return (
+        unknown["function"],
+        unknown["line"],
+        " ".join(unknown["question"].split()).casefold(),
+    )
+
+
+def answered_question_matches(state: dict[str, Any]) -> dict[str, list[str]]:
+    answered: dict[tuple[str, int, str], list[str]] = {}
+    for unknown in state["unknowns"]:
+        if unknown["status"] == "answered":
+            answered.setdefault(question_key(unknown), []).append(unknown["id"])
+    return {
+        unknown["id"]: answered[question_key(unknown)]
+        for unknown in state["unknowns"]
+        if unknown["status"] == "open" and question_key(unknown) in answered
+    }
+
+
 def mark_duplicate(
     state: dict[str, Any], unknown_id: str, canonical_id: str, reason: str
 ) -> None:

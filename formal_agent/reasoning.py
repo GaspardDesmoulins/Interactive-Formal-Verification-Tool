@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from formal_agent.duplicates import question_key
 from formal_agent.properties import next_property_id
 
 
@@ -123,11 +124,11 @@ def apply_proposals(
             next_id += 1
         unknown_id = f"U{next_id}"
         existing_ids.add(unknown_id)
-        question_key = " ".join(item["question"].split()).casefold()
+        key = question_key(item)
         applied.similar_unknowns.extend(
             (unknown_id, candidate["id"])
             for candidate in same_function
-            if " ".join(candidate["question"].split()).casefold() == question_key
+            if question_key(candidate) == key
         )
         state["unknowns"].append({
             "id": unknown_id,

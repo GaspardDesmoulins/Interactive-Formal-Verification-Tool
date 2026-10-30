@@ -8,7 +8,7 @@ from pathlib import Path
 from formal_agent.analysis import analyze
 from formal_agent.assumptions import add_assumption, link_property
 from formal_agent.conflicts import record_conflict, resolve_conflict
-from formal_agent.duplicates import mark_duplicate, reopen_duplicate
+from formal_agent.duplicates import answered_question_matches, mark_duplicate, reopen_duplicate
 from formal_agent.evidence import capture_evidence, discover_evidence, reference_at_line
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
 from formal_agent.ollama import MODEL, SUPPORTED_MODELS, OllamaProvider
@@ -16,7 +16,9 @@ from formal_agent.properties import accept_property, add_property
 from formal_agent.reasoning import JsonFileProvider, apply_proposals
 from formal_agent.reporting import render_report
 from formal_agent.storage import create, load, load_snapshot, save
-from formal_agent.workflow import answer_recorded, ask, finish, prepare_answer, require_active, resume
+from formal_agent.workflow import (
+    answer_recorded, ask, finish, prepare_answer, prevent_reask, require_active, resume,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,6 +42,9 @@ def main(argv: list[str] | None = None) -> int:
     question = commands.add_parser("ask", help="Suspend while awaiting an open question")
     question.add_argument("state", type=Path)
     question.add_argument("unknown_id", nargs="?", help="Unknown ID; omit to select by priority")
+    question.add_argument(
+        "--allow-reask", action="store_true", help="Explicitly ask a question matching an answer"
+    )
     done = commands.add_parser("finish", help="Finish an investigation")
     done.add_argument("state", type=Path)
     done.add_argument("--allow-open", action="store_true", help="Explicitly retain open unknowns")
@@ -65,6 +70,9 @@ def main(argv: list[str] | None = None) -> int:
     answer.add_argument("state", type=Path)
     answer.add_argument("unknown_id")
     answer.add_argument("--answer", help="Answer text; prompt if omitted")
+    answer.add_argument(
+        "--allow-reask", action="store_true", help="Explicitly prompt for a question matching an answer"
+    )
     answer.add_argument("--reference", type=Path, help="Previously recorded reference file")
     answer.add_argument("--line", type=int, help="Line containing supporting text")
     add = commands.add_parser("add-property", help="Propose a property from an answer")
@@ -143,6 +151,11 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError(f"Unknown {args.unknown_id} does not exist.")
                 if unknown["status"] != "open":
                     raise ValueError(f"Unknown {args.unknown_id} is already resolved.")
+                if (
+                    args.answer is None
+                    and state["workflow"]["pending_unknown_id"] != args.unknown_id
+                ):
+                    prevent_reask(state, args.unknown_id, args.allow_reask)
                 text = args.answer if args.answer is not None else input(f"{unknown['question']}\n> ")
                 resolve_unknown(state, args.unknown_id, text)
                 if reference is not None:
@@ -150,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
                 answer_recorded(state)
                 message = f"Answer recorded for {args.unknown_id}."
             elif args.command == "ask":
-                unknown = ask(state, args.unknown_id)
+                unknown = ask(state, args.unknown_id, args.allow_reask)
                 message = (
                     f"Awaiting answer for {unknown['id']}: "
                     f"{json.dumps(unknown['question'], ensure_ascii=False)}"
@@ -244,6 +257,18 @@ def main(argv: list[str] | None = None) -> int:
                     "server support for truncation controls is not checked.",
                     file=sys.stderr,
                 )
+            elif args.command == "ask":
+                matches = answered_question_matches(state)
+                if matches:
+                    pairs = ", ".join(
+                        f"{unknown_id} matches {', '.join(answered)}"
+                        for unknown_id, answered in matches.items()
+                    )
+                    print(
+                        f"Warning: open questions have the same normalized text as answered "
+                        f"questions: {pairs}. Review them; equivalence is not assumed.",
+                        file=sys.stderr,
+                    )
     except (OSError, UnicodeError, SyntaxError, ValueError, EOFError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

@@ -97,6 +97,25 @@ class EndToEndTests(unittest.TestCase):
             self.assertEqual(json.loads(success("show", str(state)))["workflow"]["phase"],
                              "awaiting_answer")
             success("answer", str(state), unknown_id, "--answer", "Negative amounts are rejected.")
+            repeat = root / "repeat.json"
+            repeat.write_text(json.dumps({
+                "source_sha256": snapshot["model"]["sha256"],
+                "properties": [],
+                "unknowns": [{
+                    "function": "withdraw", "line": 1,
+                    "description": "Review the negative amount behavior.",
+                    "question": "  SHOULD NEGATIVE WITHDRAWALS BE REJECTED?  ",
+                    "impact": "Clarify the permitted amount domain.",
+                }],
+            }), encoding="utf-8")
+            success("import-proposals", str(state), str(repeat), "--reasoner", "review")
+            repeated_id = json.loads(success("show", str(state)))["unknowns"][-1]["id"]
+            before_reask = state.read_bytes()
+            blocked = invoke("ask", str(state), repeated_id)
+            self.assertEqual(blocked.returncode, 1)
+            self.assertIn("same normalized question as answered", blocked.stderr)
+            self.assertEqual(state.read_bytes(), before_reask)
+            success("mark-duplicate", str(state), repeated_id, unknown_id, "--reason", "reviewed")
             success("add-assumption", str(state), unknown_id, "P1", "--statement", "amount > 0")
             success("accept-property", str(state), "P1")
             success("record-conflict", str(state), unknown_id, "--description", "Sources differ.")
@@ -108,6 +127,7 @@ class EndToEndTests(unittest.TestCase):
             self.assertIn("Reference files (1)", report)
             self.assertIn("A1 [assumed]", report)
             self.assertIn("C1 [resolved]", report)
+            self.assertIn(f'User-marked duplicate of: "{unknown_id}"', report)
             self.assertIn("verification: not performed", report)
             self.assertIn("Verification results: none", report)
             self.assertFalse(marker.exists())
