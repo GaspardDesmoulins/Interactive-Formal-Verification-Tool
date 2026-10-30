@@ -14,6 +14,7 @@ Depuis la racine du dépôt, avec Python 3.10 ou plus récent :
 python -m formal_agent start module.py investigation.json
 python -m formal_agent show investigation.json
 python -m formal_agent propose-ollama investigation.json
+python -m formal_agent ask investigation.json
 python -m formal_agent answer investigation.json U1
 python -m formal_agent add-property investigation.json U1 --statement "La propriété attendue"
 python -m formal_agent add-assumption investigation.json U1 P1 --statement "Hypothèse à vérifier"
@@ -28,6 +29,8 @@ La commande `answer` affiche la question puis demande une réponse ; `--answer "
 Une fois une question répondue, `add-property` enregistre une propriété candidate rédigée par l'utilisateur, liée à cette réponse. `accept-property` la retient explicitement comme spécification ; **cela ne la vérifie ni ne la démontre**. Les investigations au format initial sont migrées en mémoire à la lecture, puis enregistrées au nouveau format lors de la prochaine modification.
 
 `link-property` relie explicitement une question à une propriété de la même fonction. Après une réponse, `add-assumption` enregistre une hypothèse formulée par l'utilisateur pour une propriété liée. Le rapport en conserve l'origine, la réponse source et la propriété concernée : une hypothèse reste non vérifiée, même si la propriété est acceptée. Une propriété issue d'une réponse est automatiquement liée à cette réponse.
+
+L'investigation suit trois phases persistantes : `active`, `awaiting_answer` et `finished`. `ask` choisit une question ouverte en donnant priorité aux liens vers des propriétés acceptées, puis candidates ; `ask investigation.json U2` choisit explicitement une question. La réponse attendue remet l'investigation en phase active ; `resume` permet aussi d'abandonner l'attente ou de rouvrir une investigation terminée. `finish` refuse les questions ouvertes sauf avec `--allow-open` : celles-ci restent visibles dans le rapport et ne sont pas considérées comme résolues. Terminer l'investigation ne signifie pas que des propriétés sont prouvées.
 
 `report` produit un rapport textuel déterministe sur les fonctions, les questions, les réponses, les propriétés et leurs limites ; il indique qu'aucune vérification du code cible n'a été effectuée. `show` conserve la sortie JSON complète.
 

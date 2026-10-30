@@ -44,12 +44,13 @@ def create_investigation(model: dict[str, Any]) -> dict[str, Any]:
                 "answer": None,
             })
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "model": model,
         "unknowns": unknowns,
         "properties": [],
         "links": [],
         "assumptions": [],
+        "workflow": {"phase": "active", "pending_unknown_id": None},
     }
 
 

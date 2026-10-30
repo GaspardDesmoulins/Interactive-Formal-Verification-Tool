@@ -120,12 +120,13 @@ class ReasoningTests(unittest.TestCase):
         state["schema_version"] = 2
         del state["links"]
         del state["assumptions"]
+        del state["workflow"]
         self.state.write_text(json.dumps(state), encoding="utf-8")
         original = self.state.read_bytes()
         self.assertEqual(self.run_cli("show", str(self.state))[0], 0)
         self.assertEqual(self.state.read_bytes(), original)
         self.assertEqual(self.import_data(self.data)[0], 0)
-        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8"))["schema_version"], 4)
+        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8"))["schema_version"], 5)
 
 
 if __name__ == "__main__":

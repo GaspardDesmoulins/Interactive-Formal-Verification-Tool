@@ -22,7 +22,7 @@ def validate(state: Any) -> None:
     if (
         not isinstance(state, dict)
         or type(state.get("schema_version")) is not int
-        or state["schema_version"] not in (1, 2, 3, 4)
+        or state["schema_version"] not in (1, 2, 3, 4, 5)
     ):
         raise ValueError("Invalid or unsupported investigation schema.")
     model = state.get("model")
@@ -206,6 +206,28 @@ def validate(state: Any) -> None:
         ):
             raise ValueError("Invalid assumption or provenance.")
         assumption_ids.add(assumption_id)
+    if state["schema_version"] == 4:
+        if "workflow" in state:
+            raise ValueError("Legacy schema must not contain workflow.")
+        return
+    workflow = state.get("workflow")
+    if not isinstance(workflow, dict) or set(workflow) != {"phase", "pending_unknown_id"}:
+        raise ValueError("Invalid investigation workflow.")
+    phase = workflow["phase"]
+    pending = workflow["pending_unknown_id"]
+    if (
+        phase not in ("active", "awaiting_answer", "finished")
+        or (phase != "awaiting_answer" and pending is not None)
+        or (
+            phase == "awaiting_answer"
+            and (
+                not isinstance(pending, str)
+                or pending not in unknowns_by_id
+                or unknowns_by_id[pending]["status"] != "open"
+            )
+        )
+    ):
+        raise ValueError("Invalid investigation workflow.")
 
 
 def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
@@ -224,6 +246,9 @@ def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
             for item in state["properties"] if item["origin"] == "user"
         ]
         state["assumptions"] = []
+    if state["schema_version"] == 4:
+        state["schema_version"] = 5
+        state["workflow"] = {"phase": "active", "pending_unknown_id": None}
     return state, hashlib.sha256(raw).hexdigest()
 
 

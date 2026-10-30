@@ -19,6 +19,8 @@ def render_report(state: dict[str, Any]) -> str:
         f"Source: {quote(model['source'])}",
         f"Analyzed SHA-256: {quote(model['sha256'])}",
         f"Source status: {quote(warning) if warning else 'matches analyzed snapshot'}",
+        f"Investigation phase: {state['workflow']['phase']}",
+        f"Pending question: {quote(state['workflow']['pending_unknown_id']) if state['workflow']['pending_unknown_id'] else 'none'}",
         "",
         "Scope and limitations",
         "- Syntax-only analysis of top-level Python functions and explicit imports.",
