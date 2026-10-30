@@ -7,6 +7,7 @@ from pathlib import Path
 
 from formal_agent.analysis import analyze
 from formal_agent.assumptions import add_assumption, link_property
+from formal_agent.evidence import capture_evidence
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
 from formal_agent.ollama import MODEL, OllamaProvider
 from formal_agent.properties import accept_property, add_property
@@ -22,6 +23,10 @@ def main(argv: list[str] | None = None) -> int:
     start = commands.add_parser("start", help="Analyze a Python file without executing it")
     start.add_argument("source", type=Path)
     start.add_argument("state", type=Path, help="New investigation JSON file")
+    start.add_argument(
+        "--evidence", type=Path, action="append", default=[],
+        help="UTF-8 documentation or test file to consider as untrusted text; may be repeated",
+    )
     show = commands.add_parser("show", help="Display a saved investigation as JSON")
     show.add_argument("state", type=Path)
     report = commands.add_parser("report", help="Render an investigation report")
@@ -67,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "start":
             model = analyze(args.source)
+            model["evidence_sources"] = capture_evidence(args.evidence, model["source"])
             state = create_investigation(model)
             create(args.state, state)
             print(f"Investigation saved: {args.state}")

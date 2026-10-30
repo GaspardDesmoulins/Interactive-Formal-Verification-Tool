@@ -37,6 +37,24 @@ def validate(state: Any) -> None:
         raise ValueError("Invalid investigation model.")
     if "imports" in model:
         validate_imports(model["imports"])
+    references = model.get("evidence_sources", [])
+    if not isinstance(references, list):
+        raise ValueError("Invalid evidence sources.")
+    reference_paths = set()
+    for reference in references:
+        if (
+            not isinstance(reference, dict)
+            or set(reference) != {"path", "sha256"}
+            or not isinstance(reference["path"], str)
+            or not reference["path"]
+            or reference["path"] == model["source"]
+            or reference["path"] in reference_paths
+            or not isinstance(reference["sha256"], str)
+            or len(reference["sha256"]) != 64
+            or any(char not in "0123456789abcdef" for char in reference["sha256"])
+        ):
+            raise ValueError("Invalid evidence source.")
+        reference_paths.add(reference["path"])
     for function in model["functions"]:
         if not isinstance(function, dict):
             raise ValueError("Invalid function observation.")

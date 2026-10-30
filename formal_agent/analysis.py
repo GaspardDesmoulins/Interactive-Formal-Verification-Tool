@@ -86,6 +86,7 @@ def analyze(path: Path) -> dict[str, Any]:
     return {
         "source": str(path.resolve()),
         "sha256": hashlib.sha256(source_bytes).hexdigest(),
+        "evidence_sources": [],
         "imports": module_visitor.imports,
         "functions": functions,
     }

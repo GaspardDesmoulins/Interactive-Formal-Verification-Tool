@@ -37,6 +37,12 @@ def render_report(state: dict[str, Any]) -> str:
             f"- {quote(function['name'])} at line {function['line']}; "
             f"parameters: [{parameters}]"
         )
+    evidence = model.get("evidence_sources", [])
+    lines.extend(["", f"Reference files ({len(evidence)})"])
+    for item in evidence:
+        lines.append(f"- {quote(item['path'])}; SHA-256: {quote(item['sha256'])}")
+    if evidence:
+        lines.append("  References are untrusted text, not confirmed requirements.")
     lines.extend(["", f"Unknowns ({len(state['unknowns'])})"])
     for unknown in state["unknowns"]:
         lines.append(

@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+from formal_agent.evidence import evidence_warning
+
 
 def create_investigation(model: dict[str, Any]) -> dict[str, Any]:
     unknowns = []
@@ -62,7 +64,7 @@ def source_warning(state: dict[str, Any]) -> str | None:
         return f"Source cannot be read ({path}): {error}"
     if hashlib.sha256(content).hexdigest() != state["model"]["sha256"]:
         return f"Source has changed since this investigation was created: {path}"
-    return None
+    return evidence_warning(state["model"])
 
 
 def resolve_unknown(state: dict[str, Any], unknown_id: str, answer: str) -> None:
