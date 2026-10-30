@@ -77,6 +77,7 @@ class OllamaTests(unittest.TestCase):
         self.assertEqual(request.full_url, ENDPOINT)
         payload = json.loads(request.data)
         self.assertEqual(payload["model"], MODEL)
+        self.assertNotIn("maxItems", payload["format"]["properties"]["properties"])
         self.assertFalse(payload["think"])
         self.assertFalse(payload["stream"])
         self.assertEqual(payload["options"]["num_predict"], 1400)
@@ -89,6 +90,136 @@ class OllamaTests(unittest.TestCase):
         self.assertEqual(state["properties"][0]["reasoner"], "ollama:bonsai-2:4b")
         self.assertEqual(state["unknowns"][-1]["status"], "open")
         self.assertIn("verification: not performed", self.run_cli("report", str(self.state))[1])
+
+    def test_selected_model_is_used_and_recorded_as_provenance(self) -> None:
+        with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
+            builder.return_value.open.return_value = self.response()
+            result, _, error = self.run_cli(
+                "propose-ollama", str(self.state), "--model", "qwen3.5:9b"
+            )
+        self.assertEqual((result, error), (0, ""))
+        request = builder.return_value.open.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertEqual(payload["model"], "qwen3.5:9b")
+        self.assertEqual(payload["format"]["properties"]["properties"]["maxItems"], 1)
+        self.assertEqual(payload["format"]["properties"]["unknowns"]["maxItems"], 2)
+        self.assertEqual(
+            payload["format"]["properties"]["properties"]["items"]["properties"]["statement"]["maxLength"],
+            240,
+        )
+        self.assertEqual(
+            payload["format"]["properties"]["unknowns"]["items"]["properties"]["question"]["maxLength"],
+            240,
+        )
+        self.assertIn("under 20 words", payload["messages"][0]["content"])
+        state = load(self.state)
+        self.assertEqual(state["properties"][0]["reasoner"], "ollama:qwen3.5:9b")
+        self.assertEqual(state["unknowns"][-1]["origin"], "LLM proposal (ollama:qwen3.5:9b)")
+        report = self.run_cli("report", str(self.state))[1]
+        self.assertIn('reasoner: "ollama:qwen3.5:9b"', report)
+
+    def test_same_proposal_from_different_models_preserves_property_provenance(self) -> None:
+        with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
+            builder.return_value.open.return_value = self.response()
+            self.assertEqual(self.run_cli("propose-ollama", str(self.state))[0], 0)
+            result, output, error = self.run_cli(
+                "propose-ollama", str(self.state), "--model", "qwen3.5:9b"
+            )
+        self.assertEqual((result, error), (0, ""))
+        self.assertIn("1 candidate properties and 0 unknowns", output)
+        self.assertIn("Skipped exact unknown proposal #1; matches U3.", output)
+        state = load(self.state)
+        self.assertEqual(
+            [item["reasoner"] for item in state["properties"]],
+            ["ollama:bonsai-2:4b", "ollama:qwen3.5:9b"],
+        )
+        self.assertEqual(len(state["unknowns"]), 3)
+
+    def test_selected_model_rejects_excess_items_atomically(self) -> None:
+        original = self.state.read_bytes()
+        for field in ("properties", "unknowns"):
+            with self.subTest(field=field):
+                proposal = {**self.proposal, field: self.proposal[field] * 3}
+                response = self.response(message={"content": json.dumps(proposal)})
+                with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
+                    builder.return_value.open.return_value = response
+                    result, _, error = self.run_cli(
+                        "propose-ollama", str(self.state), "--model", "qwen3.5:9b"
+                    )
+                self.assertEqual(result, 1)
+                self.assertIn("exceeds the selected model's item limits", error)
+                self.assertEqual(self.state.read_bytes(), original)
+
+    def test_selected_model_rejects_text_at_or_above_limit_atomically(self) -> None:
+        original = self.state.read_bytes()
+        for size in (240, 241):
+            for section, field in (
+                ("properties", "statement"),
+                ("unknowns", "description"),
+                ("unknowns", "question"),
+                ("unknowns", "impact"),
+            ):
+                with self.subTest(size=size, section=section, field=field):
+                    item = {**self.proposal[section][0], field: "x" * size}
+                    proposal = {**self.proposal, section: [item]}
+                    response = self.response(message={"content": json.dumps(proposal)})
+                    with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
+                        builder.return_value.open.return_value = response
+                        result, _, error = self.run_cli(
+                            "propose-ollama", str(self.state), "--model", "qwen3.5:9b"
+                        )
+                    self.assertEqual(result, 1)
+                    self.assertIn("text length limit", error)
+                    self.assertEqual(self.state.read_bytes(), original)
+
+    def test_selected_model_accepts_text_below_the_length_limit(self) -> None:
+        statement = "x" * 239
+        proposal = {
+            **self.proposal,
+            "properties": [{**self.proposal["properties"][0], "statement": statement}],
+        }
+        with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
+            builder.return_value.open.return_value = self.response(
+                message={"content": json.dumps(proposal)}
+            )
+            result, _, error = self.run_cli(
+                "propose-ollama", str(self.state), "--model", "qwen3.5:9b"
+            )
+        self.assertEqual((result, error), (0, ""))
+        self.assertEqual(load(self.state)["properties"][0]["statement"], statement)
+
+    def test_selected_model_rejects_function_code_as_property(self) -> None:
+        original = self.state.read_bytes()
+        for statement in (
+            "def main(args: list[str]) -> None:\n    pass",
+            "```python\nasync def f():\n    pass\n```",
+        ):
+            with self.subTest(statement=statement):
+                proposal = {
+                    **self.proposal,
+                    "properties": [{**self.proposal["properties"][0], "statement": statement}],
+                }
+                with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
+                    builder.return_value.open.return_value = self.response(
+                        message={"content": json.dumps(proposal)}
+                    )
+                    result, _, error = self.run_cli(
+                        "propose-ollama", str(self.state), "--model", "qwen3.5:9b"
+                    )
+                self.assertEqual(result, 1)
+                self.assertIn("function definition instead of a requirement", error)
+                self.assertEqual(self.state.read_bytes(), original)
+
+    def test_unsupported_model_is_rejected_without_network_or_mutation(self) -> None:
+        original = self.state.read_bytes()
+        for model in ("", " ", "qwen3.5:cloud", "not-installed"):
+            with self.subTest(model=model):
+                with patch("formal_agent.ollama.urllib.request.build_opener") as builder:
+                    result, _, error = self.run_cli("propose-ollama", str(self.state), "--model", model)
+                self.assertEqual(result, 1)
+                self.assertIn("Unsupported Ollama model", error)
+                builder.assert_not_called()
+                self.assertEqual(self.state.read_bytes(), original)
 
     def test_incomplete_or_invalid_outputs_do_not_change_investigation(self) -> None:
         original = self.state.read_bytes()

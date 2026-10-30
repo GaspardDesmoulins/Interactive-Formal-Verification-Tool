@@ -11,7 +11,7 @@ from formal_agent.conflicts import record_conflict, resolve_conflict
 from formal_agent.duplicates import mark_duplicate, reopen_duplicate
 from formal_agent.evidence import capture_evidence, discover_evidence, reference_at_line
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
-from formal_agent.ollama import MODEL, OllamaProvider
+from formal_agent.ollama import MODEL, SUPPORTED_MODELS, OllamaProvider
 from formal_agent.properties import accept_property, add_property
 from formal_agent.reasoning import JsonFileProvider, apply_proposals
 from formal_agent.reporting import render_report
@@ -89,6 +89,10 @@ def main(argv: list[str] | None = None) -> int:
     propose.add_argument("--reasoner", required=True, help="Name of the proposal provider")
     ollama = commands.add_parser("propose-ollama", help="Generate proposals with local Ollama")
     ollama.add_argument("state", type=Path)
+    ollama.add_argument(
+        "--model", default=MODEL,
+        help=f"Local model name (supported: {', '.join(SUPPORTED_MODELS)}; default: {MODEL})",
+    )
     ollama.add_argument("--timeout", type=int, default=300, help="Timeout in seconds (default: 300)")
     ollama.add_argument("--max-tokens", type=int, default=1400, help="Output token budget (default: 1400)")
     args = parser.parse_args(argv)
@@ -200,8 +204,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
             else:
                 require_active(state)
-                provider = OllamaProvider(timeout=args.timeout, max_tokens=args.max_tokens)
-                proposal_result = apply_proposals(state, provider, f"ollama:{MODEL}")
+                provider = OllamaProvider(
+                    timeout=args.timeout, max_tokens=args.max_tokens, model=args.model
+                )
+                proposal_result = apply_proposals(state, provider, f"ollama:{provider.model}")
                 message = (
                     f"Generated {proposal_result.properties_added} candidate properties "
                     f"and {proposal_result.unknowns_added} unknowns."

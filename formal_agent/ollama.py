@@ -1,9 +1,11 @@
 """Generate untrusted investigation proposals with a local Ollama model."""
 
 import ast
+import copy
 import hashlib
 import io
 import json
+import re
 import tokenize
 import urllib.error
 import urllib.request
@@ -14,6 +16,11 @@ from formal_agent.evidence import evidence_context
 
 
 MODEL = "bonsai-2:4b"
+QWEN_MODEL = "qwen3.5:9b"
+SUPPORTED_MODELS = (MODEL, QWEN_MODEL)
+QWEN_LIMITS = {"properties": 1, "unknowns": 2}
+QWEN_TEXT_FIELDS = {"properties": ("statement",), "unknowns": ("description", "question", "impact")}
+QWEN_TEXT_MAX = 240
 ENDPOINT = "http://127.0.0.1:11434/api/chat"
 MAX_INPUT_BYTES = 65536
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -74,11 +81,16 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class OllamaProvider:
-    def __init__(self, timeout: int = 300, max_tokens: int = 1400) -> None:
+    def __init__(
+        self, timeout: int = 300, max_tokens: int = 1400, model: str = MODEL
+    ) -> None:
         if timeout <= 0 or max_tokens <= 0:
             raise ValueError("Ollama timeout and token budget must be positive.")
+        if model not in SUPPORTED_MODELS:
+            raise ValueError(f"Unsupported Ollama model {model!r}; choose from {SUPPORTED_MODELS}.")
         self.timeout = timeout
         self.max_tokens = max_tokens
+        self.model = model
 
     def propose(self, model: dict[str, Any]) -> Any:
         source_bytes = Path(model["source"]).read_bytes()
@@ -118,14 +130,28 @@ class OllamaProvider:
             raise ValueError(
                 f"Ollama input exceeds {MAX_INPUT_BYTES} bytes; analyze a smaller file."
             )
+        schema = RESPONSE_SCHEMA
+        system_prompt = SYSTEM_PROMPT
+        if self.model == QWEN_MODEL:
+            schema = copy.deepcopy(RESPONSE_SCHEMA)
+            for name, limit in QWEN_LIMITS.items():
+                schema["properties"][name]["maxItems"] = limit
+                for field in QWEN_TEXT_FIELDS[name]:
+                    schema["properties"][name]["items"]["properties"][field]["maxLength"] = QWEN_TEXT_MAX
+            system_prompt += (
+                " For this response, propose at most one requirement and two unknowns. "
+                "Use concise natural language, not code or rewritten functions. "
+                "Keep each statement, description, question and impact under 20 words "
+                f"and under {QWEN_TEXT_MAX} characters."
+            )
         payload = {
-            "model": MODEL,
+            "model": self.model,
             "stream": False,
             "think": False,
-            "format": RESPONSE_SCHEMA,
+            "format": schema,
             "options": {"temperature": 0, "num_predict": self.max_tokens},
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": context},
             ],
         }
@@ -168,4 +194,33 @@ class OllamaProvider:
             raise ValueError(f"Ollama returned invalid JSON: {error}") from error
         if not isinstance(proposal, dict) or set(proposal) != {"properties", "unknowns"}:
             raise ValueError("Ollama proposal must contain only properties and unknowns.")
+        if self.model == QWEN_MODEL and any(
+            isinstance(proposal[name], list) and len(proposal[name]) > limit
+            for name, limit in QWEN_LIMITS.items()
+        ):
+            raise ValueError("Ollama proposal exceeds the selected model's item limits.")
+        # A field at the schema limit may have been cut off by constrained generation.
+        if self.model == QWEN_MODEL and any(
+            isinstance(item, dict)
+            and isinstance(item.get(field), str)
+            and len(item[field]) >= QWEN_TEXT_MAX
+            for name, fields in QWEN_TEXT_FIELDS.items()
+            if isinstance(proposal[name], list)
+            for item in proposal[name]
+            for field in fields
+        ):
+            raise ValueError(
+                "Ollama proposal reached the selected model's text length limit; "
+                "the text may be incomplete."
+            )
+        if self.model == QWEN_MODEL and isinstance(proposal["properties"], list) and any(
+            isinstance(item, dict)
+            and isinstance(item.get("statement"), str)
+            and re.match(
+                r"\s*(?:```[^\n]*\n\s*)?(?:async\s+)?def\s+\w+\s*\(",
+                item["statement"],
+            )
+            for item in proposal["properties"]
+        ):
+            raise ValueError("Ollama proposed a function definition instead of a requirement.")
         return {"source_sha256": model["sha256"], **proposal}
