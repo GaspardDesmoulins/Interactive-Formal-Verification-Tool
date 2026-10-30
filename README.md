@@ -4,7 +4,7 @@ Interactive Formal Verification Tool est un projet open source visant à aider l
 
 Le projet ne promet ni de découvrir toutes les défaillances, ni de démontrer automatiquement la correction d'un système. Sa valeur ajoutée est une **investigation interactive pilotée par les incertitudes** : le LLM détermine ce qu'il ne sait pas, recherche les informations disponibles, interroge l'utilisateur lorsque c'est nécessaire et transforme progressivement les réponses en propriétés et obligations de preuve vérifiables.
 
-**État du projet :** une première tranche expérimentale analyse statiquement les fonctions Python de premier niveau et permet d'enregistrer et de reprendre des réponses à des questions sur leur comportement et leurs paramètres. Le reste des fonctionnalités, interfaces et intégrations décrites ci-dessous reste à réaliser. L'analyse de raisonnements textuels fait partie de la vision, mais son périmètre et ses méthodes restent à définir.
+**État du projet :** une première tranche expérimentale analyse statiquement les fonctions Python de premier niveau, enregistre les réponses à des questions sur leur comportement et leurs paramètres et permet de proposer puis d'accepter explicitement des propriétés. Le reste des fonctionnalités, interfaces et intégrations décrites ci-dessous reste à réaliser. L'analyse de raisonnements textuels fait partie de la vision, mais son périmètre et ses méthodes restent à définir.
 
 ## Premiers pas
 
@@ -14,17 +14,21 @@ Depuis la racine du dépôt, avec Python 3.10 ou plus récent :
 python -m formal_agent start module.py investigation.json
 python -m formal_agent show investigation.json
 python -m formal_agent answer investigation.json U1
+python -m formal_agent add-property investigation.json U1 --statement "La propriété attendue"
+python -m formal_agent accept-property investigation.json P1
 python -m formal_agent show investigation.json
 python -m unittest discover -s tests
 ```
 
 La commande `answer` affiche la question puis demande une réponse ; `--answer "..."` permet aussi de fournir celle-ci directement. `start` refuse d'écraser un fichier existant. L'état JSON est enregistré localement ; il contient notamment le chemin et l'empreinte SHA-256 du fichier analysé, les observations et les réponses. Protégez ce fichier s'il contient des informations sensibles.
 
-Une investigation est un instantané : `show` avertit si la source a changé ou n'est plus accessible, tout en permettant de consulter l'état sauvegardé. Dans ces cas, `answer` refuse d'enregistrer une nouvelle réponse. Il faut créer une nouvelle investigation ; le transfert des réponses vers une nouvelle version du code n'est pas encore pris en charge.
+Une fois une question répondue, `add-property` enregistre une propriété candidate rédigée par l'utilisateur, liée à cette réponse. `accept-property` la retient explicitement comme spécification ; **cela ne la vérifie ni ne la démontre**. Les investigations au format initial sont migrées en mémoire à la lecture, puis enregistrées au nouveau format lors de la prochaine modification.
+
+Une investigation est un instantané : `show` avertit si la source a changé ou n'est plus accessible, tout en permettant de consulter l'état sauvegardé. Dans ces cas, les commandes qui modifient l'investigation refusent de l'enregistrer. Il faut créer une nouvelle investigation ; le transfert des réponses vers une nouvelle version du code n'est pas encore pris en charge.
 
 Sous Windows avec WSL et Python 3, les mêmes commandes peuvent être lancées depuis la racine du dépôt en remplaçant `python` par `wsl python3`.
 
-L'analyse utilise l'AST sans importer ni exécuter le fichier. Elle extrait les fonctions de premier niveau, leurs paramètres, les appels syntaxiques, les imports explicites au niveau du module et dans chaque fonction, ainsi que les lignes de `return` et `raise`, sans explorer les corps de fonctions ou classes imbriquées. Les imports et appels sont des observations syntaxiques : leur présence ne garantit pas leur exécution et ils ne constituent pas un graphe de dépendances résolu. L'analyse ne résout pas les appels dynamiques et ne couvre pas encore les méthodes, les propriétés candidates, les scénarios, les tests du code analysé, les LLM ou les preuves formelles. Les questions sur le comportement et chaque paramètre ne tiennent pas encore compte des réponses présentes dans les autres sources. Une réponse enregistrée ne constitue pas une spécification validée.
+L'analyse utilise l'AST sans importer ni exécuter le fichier. Elle extrait les fonctions de premier niveau, leurs paramètres, les appels syntaxiques, les imports explicites au niveau du module et dans chaque fonction, ainsi que les lignes de `return` et `raise`, sans explorer les corps de fonctions ou classes imbriquées. Les imports et appels sont des observations syntaxiques : leur présence ne garantit pas leur exécution et ils ne constituent pas un graphe de dépendances résolu. L'analyse ne résout pas les appels dynamiques et ne couvre pas encore les méthodes, la génération automatique de propriétés, les scénarios, les tests du code analysé, les LLM ou les preuves formelles. Les questions sur le comportement et chaque paramètre ne tiennent pas encore compte des réponses présentes dans les autres sources. Une réponse enregistrée ne constitue pas une spécification validée.
 
 Les choix et prochaines étapes de cette tranche sont documentés dans [l'ADR 0001](docs/decisions/0001-first-investigation-slice.md).
 
@@ -76,7 +80,7 @@ Une CLI et une interface MCP sont envisagées pour lancer, inspecter et reprendr
 
 ## Modèle d'investigation et traçabilité
 
-Le modèle de données initial reste à concevoir. Les objets suivants sont envisagés :
+Le modèle initial couvre les observations, les inconnues et les propriétés proposées par l'utilisateur. Il reste à l'étendre aux objets suivants :
 
 - `ProgramModel` : représentation intermédiaire du code analysé.
 - `Property` : propriété candidate ou retenue comme spécification.

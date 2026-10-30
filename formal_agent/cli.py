@@ -7,6 +7,7 @@ from pathlib import Path
 
 from formal_agent.analysis import analyze
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
+from formal_agent.properties import accept_property, add_property
 from formal_agent.storage import create, load, save
 
 
@@ -22,6 +23,13 @@ def main(argv: list[str] | None = None) -> int:
     answer.add_argument("state", type=Path)
     answer.add_argument("unknown_id")
     answer.add_argument("--answer", help="Answer text; prompt if omitted")
+    add = commands.add_parser("add-property", help="Propose a property from an answer")
+    add.add_argument("state", type=Path)
+    add.add_argument("unknown_id")
+    add.add_argument("--statement", required=True, help="Candidate property")
+    accept = commands.add_parser("accept-property", help="Accept a candidate specification")
+    accept.add_argument("state", type=Path)
+    accept.add_argument("property_id")
     args = parser.parse_args(argv)
 
     try:
@@ -42,21 +50,29 @@ def main(argv: list[str] | None = None) -> int:
             warning = source_warning(state)
             if warning:
                 raise ValueError(f"{warning}. Start a new investigation.")
-            unknown = next(
-                (item for item in state["unknowns"] if item["id"] == args.unknown_id),
-                None,
-            )
-            if unknown is None:
-                raise ValueError(f"Unknown {args.unknown_id} does not exist.")
-            if unknown["status"] != "open":
-                raise ValueError(f"Unknown {args.unknown_id} is already resolved.")
-            text = args.answer if args.answer is not None else input(f"{unknown['question']}\n> ")
-            resolve_unknown(state, args.unknown_id, text)
+            if args.command == "answer":
+                unknown = next(
+                    (item for item in state["unknowns"] if item["id"] == args.unknown_id),
+                    None,
+                )
+                if unknown is None:
+                    raise ValueError(f"Unknown {args.unknown_id} does not exist.")
+                if unknown["status"] != "open":
+                    raise ValueError(f"Unknown {args.unknown_id} is already resolved.")
+                text = args.answer if args.answer is not None else input(f"{unknown['question']}\n> ")
+                resolve_unknown(state, args.unknown_id, text)
+                message = f"Answer recorded for {args.unknown_id}."
+            elif args.command == "add-property":
+                property_id = add_property(state, args.unknown_id, args.statement)
+                message = f"Candidate property {property_id} recorded."
+            else:
+                accept_property(state, args.property_id)
+                message = f"Property {args.property_id} accepted as a specification, not proved."
             warning = source_warning(state)
             if warning:
-                raise ValueError(f"{warning}. Answer was not saved; start a new investigation.")
+                raise ValueError(f"{warning}. Changes were not saved; start a new investigation.")
             save(args.state, state)
-            print(f"Answer recorded for {args.unknown_id}.")
+            print(message)
     except (OSError, UnicodeError, SyntaxError, ValueError, EOFError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

@@ -76,7 +76,7 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("Error:", error)
         self.assertFalse(self.state.exists())
-        self.state.write_text('{"schema_version": 2}', encoding="utf-8")
+        self.state.write_text('{"schema_version": 3}', encoding="utf-8")
         self.assertEqual(self.run_cli("show", str(self.state))[0], 1)
 
     def test_target_is_not_executed(self) -> None:
@@ -196,7 +196,7 @@ class InvestigationTests(unittest.TestCase):
         with patch("builtins.input", side_effect=change_source):
             result, _, error = self.run_cli("answer", str(self.state), "U1")
         self.assertEqual(result, 1)
-        self.assertIn("Answer was not saved", error)
+        self.assertIn("Changes were not saved", error)
         self.assertEqual(self.state.read_bytes(), original)
 
 

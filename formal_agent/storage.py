@@ -21,7 +21,7 @@ def validate(state: Any) -> None:
     if (
         not isinstance(state, dict)
         or type(state.get("schema_version")) is not int
-        or state["schema_version"] != 1
+        or state["schema_version"] not in (1, 2)
     ):
         raise ValueError("Invalid or unsupported investigation schema.")
     model = state.get("model")
@@ -85,12 +85,52 @@ def validate(state: Any) -> None:
         ):
             raise ValueError("Invalid unknown.")
         ids.add(unknown_id)
+    if state["schema_version"] == 1:
+        if "properties" in state:
+            raise ValueError("Schema 1 must not contain properties.")
+        return
+    properties = state.get("properties")
+    if not isinstance(properties, list):
+        raise ValueError("Invalid properties.")
+    property_ids = set()
+    unknowns_by_id = {unknown["id"]: unknown for unknown in unknowns}
+    for property_item in properties:
+        if not isinstance(property_item, dict):
+            raise ValueError("Invalid property.")
+        property_id = property_item.get("id")
+        status = property_item.get("status")
+        statement = property_item.get("statement")
+        source_id = property_item.get("source_unknown_id")
+        if (
+            not isinstance(property_id, str)
+            or not property_id.startswith("P")
+            or not property_id[1:].isascii()
+            or not property_id[1:].isdigit()
+            or int(property_id[1:]) < 1
+            or str(int(property_id[1:])) != property_id[1:]
+            or property_id in property_ids
+            or not isinstance(statement, str)
+            or not statement.strip()
+            or status not in ("candidate", "accepted")
+            or property_item.get("origin") != "user"
+            or not isinstance(source_id, str)
+            or source_id not in unknowns_by_id
+            or unknowns_by_id[source_id]["status"] != "answered"
+            or "accepted_by" not in property_item
+            or (status == "candidate" and property_item.get("accepted_by") is not None)
+            or (status == "accepted" and property_item.get("accepted_by") != "user")
+        ):
+            raise ValueError("Invalid property or provenance.")
+        property_ids.add(property_id)
 
 
 def load(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as file:
         state = json.load(file)
     validate(state)
+    if state["schema_version"] == 1:
+        state["schema_version"] = 2
+        state["properties"] = []
     return state
 
 
