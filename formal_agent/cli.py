@@ -15,6 +15,7 @@ from formal_agent.ollama import MODEL, SUPPORTED_MODELS, OllamaProvider
 from formal_agent.properties import accept_property, add_property
 from formal_agent.reasoning import JsonFileProvider, apply_proposals
 from formal_agent.reporting import render_report
+from formal_agent.scenarios import ASSESSMENTS, add_scenario, review_scenario
 from formal_agent.storage import create, load, load_snapshot, save
 from formal_agent.workflow import (
     answer_recorded, ask, finish, prepare_answer, prevent_reask, require_active, resume,
@@ -91,6 +92,18 @@ def main(argv: list[str] | None = None) -> int:
     assume.add_argument("unknown_id")
     assume.add_argument("property_id")
     assume.add_argument("--statement", required=True, help="Assumption based on the answer")
+    scenario = commands.add_parser("add-scenario", help="Record a user-defined candidate scenario")
+    scenario.add_argument("state", type=Path)
+    scenario.add_argument("property_id")
+    scenario.add_argument("--description", required=True, help="Inputs or situation to examine")
+    scenario.add_argument("--expected", required=True, help="Expected outcome")
+    review = commands.add_parser("review-scenario", help="Record an unverified coverage assessment")
+    review.add_argument("state", type=Path)
+    review.add_argument("scenario_id")
+    review.add_argument("--assessment", required=True, choices=ASSESSMENTS)
+    review.add_argument("--reason", required=True, help="Reason for the user assessment")
+    review.add_argument("--reference", type=Path, help="Previously recorded reference file")
+    review.add_argument("--line", type=int, help="Line containing possibly relevant text")
     propose = commands.add_parser("import-proposals", help="Import untrusted LLM proposals")
     propose.add_argument("state", type=Path)
     propose.add_argument("proposals", type=Path)
@@ -211,6 +224,16 @@ def main(argv: list[str] | None = None) -> int:
                     state, args.unknown_id, args.property_id, args.statement
                 )
                 message = f"Assumption {assumption_id} recorded; it has not been verified."
+            elif args.command == "add-scenario":
+                require_active(state)
+                scenario_id = add_scenario(state, args.property_id, args.description, args.expected)
+                message = f"Candidate scenario {scenario_id} recorded; coverage not assessed."
+            elif args.command == "review-scenario":
+                require_active(state)
+                review_scenario(
+                    state, args.scenario_id, args.assessment, args.reason, args.reference, args.line
+                )
+                message = f"User assessment for {args.scenario_id} recorded; coverage not verified."
             elif args.command == "import-proposals":
                 require_active(state)
                 proposal_result = apply_proposals(state, JsonFileProvider(args.proposals), args.reasoner)

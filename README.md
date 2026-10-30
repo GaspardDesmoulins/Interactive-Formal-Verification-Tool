@@ -4,7 +4,7 @@ Interactive Formal Verification Tool est un projet open source visant à aider l
 
 Le projet ne promet ni de découvrir toutes les défaillances, ni de démontrer automatiquement la correction d'un système. Sa valeur ajoutée est une **investigation interactive pilotée par les incertitudes** : le LLM détermine ce qu'il ne sait pas, recherche les informations disponibles, interroge l'utilisateur lorsque c'est nécessaire et transforme progressivement les réponses en propriétés et obligations de preuve vérifiables.
 
-**État du projet :** le MVP 1 expérimental couvre une investigation des fonctions Python de premier niveau : analyse statique, références, questions et réponses persistantes, propriétés et hypothèses candidates, décisions et rapport. Il peut générer des propositions avec les modèles locaux Ollama `bonsai-2:4b` ou `qwen3.5:9b`, ou les importer depuis un fichier. Il ne démontre ni l'exactitude des propositions ni la correction du programme ; les fonctionnalités et intégrations ultérieures décrites ci-dessous restent à réaliser. L'analyse de raisonnements textuels fait partie de la vision, mais son périmètre et ses méthodes restent à définir.
+**État du projet :** le MVP 1 expérimental couvre une investigation des fonctions Python de premier niveau : analyse statique, références, questions et réponses persistantes, propriétés et hypothèses candidates, décisions et rapport. Une première tranche du MVP 2 ajoute un registre manuel de scénarios et d'évaluations de couverture non vérifiées. L'outil peut générer des propositions avec les modèles locaux Ollama `bonsai-2:4b` ou `qwen3.5:9b`, ou les importer depuis un fichier. Il ne démontre ni l'exactitude des propositions ni la correction du programme ; les fonctionnalités et intégrations ultérieures décrites ci-dessous restent à réaliser. L'analyse de raisonnements textuels fait partie de la vision, mais son périmètre et ses méthodes restent à définir.
 
 ## Premiers pas
 
@@ -48,7 +48,21 @@ Si deux questions sur la même fonction sont équivalentes, l'utilisateur peut e
 
 Un désaccord relevé par l'utilisateur peut être enregistré avec `record-conflict investigation.json U2 --description "description du désaccord"`, puis une décision consignée avec `resolve-conflict investigation.json C1 --resolution "décision"`. Les deux restent visibles dans le rapport ; cette décision ne vérifie ni les sources ni une propriété. La détection automatique des contradictions n'est pas encore implémentée.
 
-`report` produit un rapport textuel déterministe sur les fonctions, imports, appels et lignes observés, les questions, réponses, propriétés, hypothèses et leurs limites ; il indique qu'aucune vérification du code cible n'a été effectuée. Les docstrings et les références sont indiquées comme non vérifiées. `show` conserve la sortie JSON complète.
+### Scénarios candidats
+
+Une investigation active peut enregistrer un scénario formulé par l'utilisateur pour une propriété existante, candidate ou acceptée :
+
+```text
+python -m formal_agent add-scenario investigation.json P1 --description "Montant nul" --expected "Le retrait est refusé"
+python -m formal_agent review-scenario investigation.json S1 --assessment potential_gap --reason "Je n'ai pas trouvé ce cas dans les références examinées"
+python -m formal_agent review-scenario investigation.json S1 --assessment reference_found --reason "Cette ligne semble pertinente" --reference test_module.py --line 12
+```
+
+Le scénario est d'abord **non évalué**. `potential_gap` indique une lacune seulement supposée par l'utilisateur ; `reference_found` exige une citation d'un fichier déclaré au démarrage avec `--evidence`, dont la ligne existe et l'empreinte reste identique. Une citation peut aussi accompagner les autres évaluations. `inconclusive` permet de noter que l'appréciation est indéterminée. Chaque évaluation exige une justification et s'ajoute à l'historique ; le rapport affiche la dernière et conserve les évaluations précédentes, même contradictoires. Les chemins, empreintes et numéros de ligne sont conservés, mais la pertinence de la citation n'est pas vérifiée.
+
+L'outil **ne prouve pas qu'un scénario est couvert ou non testé** : il ne recherche pas automatiquement les scénarios manquants et n'exécute ni le code cible ni ses tests. Les scénarios et évaluations sont transmis au fournisseur de raisonnement comme données d'historique non fiables. Une modification de la source ou d'une référence bloque les nouvelles évaluations, mais les informations déjà enregistrées restent consultables.
+
+`report` produit un rapport textuel déterministe sur les fonctions, imports, appels et lignes observés, les questions, réponses, propriétés, hypothèses, scénarios, évaluations et leurs limites ; il indique qu'aucune vérification du code cible n'a été effectuée. Les docstrings et les références sont indiquées comme non vérifiées. `show` conserve la sortie JSON complète.
 
 ### Générer des propositions avec Ollama
 
@@ -56,7 +70,7 @@ La commande facultative `propose-ollama` utilise `bonsai-2:4b` par défaut. Pour
 
 Pour limiter la longueur des réponses de `qwen3.5:9b`, chaque appel lui demande au plus une propriété et deux inconnues, avec des textes courts ; une réponse dépassant ces nombres ou atteignant 240 caractères dans un champ est refusée, car le texte peut avoir été coupé. Une définition de fonction présentée comme propriété est aussi refusée. Plusieurs appels peuvent être nécessaires pour explorer d'autres pistes. Ces contrôles ne détectent pas toutes les sorties incorrectes et ne garantissent pas la pertinence des propositions.
 
-La commande transmet au serveur local les extraits des fonctions de premier niveau, y compris leurs docstrings, les imports et appels syntaxiques, le contenu des fichiers de référence, ainsi que les questions, réponses, propriétés, liens, hypothèses et désaccords de l'investigation. Ne l'utilisez qu'avec un serveur local de confiance et sur des données que vous acceptez de lui transmettre : le serveur peut conserver ses propres journaux. L'adaptateur désactive les proxies et les redirections, et ne permet pas de choisir un serveur distant.
+La commande transmet au serveur local les extraits des fonctions de premier niveau, y compris leurs docstrings, les imports et appels syntaxiques, le contenu des fichiers de référence, ainsi que les questions, réponses, propriétés, liens, hypothèses, désaccords, scénarios et évaluations de l'investigation. Ne l'utilisez qu'avec un serveur local de confiance et sur des données que vous acceptez de lui transmettre : le serveur peut conserver ses propres journaux. L'adaptateur désactive les proxies et les redirections, et ne permet pas de choisir un serveur distant.
 
 Le raisonnement étendu est désactivé et la réponse est demandée sous forme JSON structurée. Les limites par défaut sont de 300 secondes, 1 400 tokens de sortie et 65 536 octets de contexte ; les options `--timeout` et `--max-tokens` permettent de changer les deux premières. Ces paramètres ne garantissent pas qu'un modèle produise une réponse complète : une sortie incomplète, invalide ou incompatible avec la source est signalée et n'est pas enregistrée. Les performances et la mémoire nécessaires varient selon le modèle et la machine.
 
@@ -190,14 +204,14 @@ Un contre-exemple peut révéler un défaut du programme, une spécification ina
 Les étapes suivantes décrivent une progression ; le MVP 1 est limité au périmètre Python expérimental présenté ci-dessus :
 
 1. **MVP 1 — Investigation interactive :** importer du code Python, analyser son AST et ses dépendances directes, proposer des propriétés avec un LLM, tenir un registre des inconnues, poser des questions, persister l'état et produire un rapport initial. Cette étape ne prétend pas apporter une preuve formelle complète.
-2. **MVP 2 — Tests et défaillances :** générer et exécuter des tests, étudier l'intégration de Hypothesis, explorer les valeurs limites et exceptions, réduire les cas d'échec et utiliser le mutation testing.
+2. **MVP 2 — Tests et défaillances :** enregistrer les scénarios candidats, identifier et examiner les scénarios potentiellement non testés, puis générer et exécuter des tests ; étudier l'intégration de Hypothesis, explorer les valeurs limites et exceptions, réduire les cas d'échec et utiliser le mutation testing.
 3. **MVP 3 — Vérification formelle :** choisir un premier backend selon le langage et les capacités nécessaires, créer des obligations de preuve et gérer explicitement les hypothèses et résultats conditionnels.
 4. **MVP 4 — Raffinement :** analyser les contre-exemples, préciser les hypothèses et le modèle, réévaluer les questions et relancer les vérifications affectées.
 5. **MVP 5 — Systèmes complexes :** étendre progressivement l'analyse aux ensembles de fichiers, aux dépendances externes, à l'état partagé, à la concurrence, aux protocoles et aux invariants interprocéduraux.
 
 Le MVP 1 est évalué par la suite de tests standard, notamment un parcours complet avec fournisseur simulé et reprise entre processus. Un essai avec Ollama local et un test facultatif de dépassement de contexte complètent cette évaluation sans être requis pour les tests ordinaires. Les références sont fournies ou découvertes dans un voisinage borné ; les liens entre questions et propriétés sont enregistrés explicitement par l'utilisateur. La recherche et la résolution automatiques exhaustives des inconnues, la détection de tous les doublons ou désaccords et la garantie que le modèle a exploité tout le contexte ne sont pas assurées.
 
-L'identification explicite des scénarios non testés n'est pas encore formulée comme exigence de ces MVP ni implémentée. La lecture de tests en référence ne mesure pas leur couverture ; une couverture de lignes ou de branches ne garantit pas non plus la couverture des scénarios métier.
+L'identification et l'examen des scénarios potentiellement non testés sont une exigence du MVP 2, mais leur détection automatique n'est pas encore implémentée. Le registre actuel ne conserve que les scénarios et appréciations formulés par l'utilisateur. La lecture de tests en référence ne mesure pas leur couverture ; une couverture de lignes ou de branches ne garantit pas non plus la couverture des scénarios métier.
 
 Avant l'implémentation, la première mission consiste à étudier les références existantes, notamment AProver, à comparer les approches du MVP 1 et à identifier ce qui peut être réutilisé. Elle doit déboucher sur une architecture minimale, des interfaces et modèles de données initiaux ainsi qu'un plan découpé en petites étapes vérifiables. Chaque étape d'implémentation doit produire un résultat exécutable, testé et documenté, sans chercher à intégrer tous les moteurs dès le départ.
 

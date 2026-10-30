@@ -172,10 +172,11 @@ class WorkflowTests(unittest.TestCase):
         state["schema_version"] = 4
         del state["workflow"]
         del state["conflicts"]
+        del state["scenarios"]
         self.state.write_text(json.dumps(state), encoding="utf-8")
         self.assertEqual(load(self.state)["workflow"]["phase"], "active")
         self.assertEqual(self.cli("ask", str(self.state), "U1")[0], 0)
-        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8"))["schema_version"], 7)
+        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8"))["schema_version"], 8)
 
 
 if __name__ == "__main__":

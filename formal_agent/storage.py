@@ -7,12 +7,26 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from formal_agent.scenarios import ASSESSMENTS
+
 
 def valid_sha256(value: Any) -> bool:
     return (
         isinstance(value, str)
         and len(value) == 64
         and all(char in "0123456789abcdef" for char in value)
+    )
+
+
+def valid_reference(value: Any, references_by_path: dict[str, str]) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value) == {"path", "sha256", "line"}
+        and isinstance(value["path"], str)
+        and value["path"] in references_by_path
+        and value["sha256"] == references_by_path[value["path"]]
+        and type(value["line"]) is int
+        and value["line"] >= 1
     )
 
 
@@ -30,9 +44,11 @@ def validate(state: Any) -> None:
     if (
         not isinstance(state, dict)
         or type(state.get("schema_version")) is not int
-        or state["schema_version"] not in (1, 2, 3, 4, 5, 6, 7)
+        or state["schema_version"] not in (1, 2, 3, 4, 5, 6, 7, 8)
     ):
         raise ValueError("Invalid or unsupported investigation schema.")
+    if state["schema_version"] < 8 and "scenarios" in state:
+        raise ValueError("Legacy schemas must not contain scenarios.")
     model = state.get("model")
     unknowns = state.get("unknowns")
     if (
@@ -129,13 +145,7 @@ def validate(state: Any) -> None:
             reference = unknown["answer_reference"]
             if (
                 status != "answered"
-                or not isinstance(reference, dict)
-                or set(reference) != {"path", "sha256", "line"}
-                or not isinstance(reference["path"], str)
-                or reference["path"] not in references_by_path
-                or reference["sha256"] != references_by_path[reference["path"]]
-                or type(reference["line"]) is not int
-                or reference["line"] < 1
+                or not valid_reference(reference, references_by_path)
             ):
                 raise ValueError("Invalid answer reference.")
         ids.add(unknown_id)
@@ -337,6 +347,52 @@ def validate(state: Any) -> None:
         ):
             raise ValueError("Invalid disagreement.")
         conflict_ids.add(conflict_id)
+    if state["schema_version"] == 7:
+        return
+    scenarios = state.get("scenarios")
+    if not isinstance(scenarios, list):
+        raise ValueError("Invalid scenarios.")
+    scenario_ids = set()
+    for scenario in scenarios:
+        if not isinstance(scenario, dict) or set(scenario) != {
+            "id", "property_id", "description", "expected", "origin", "reviews"
+        }:
+            raise ValueError("Invalid scenario.")
+        scenario_id = scenario["id"]
+        property_id = scenario["property_id"]
+        if (
+            not isinstance(scenario_id, str)
+            or not scenario_id.startswith("S")
+            or not scenario_id[1:].isascii()
+            or not scenario_id[1:].isdigit()
+            or scenario_id[1] == "0"
+            or scenario_id in scenario_ids
+            or not isinstance(property_id, str)
+            or property_id not in properties_by_id
+            or not isinstance(scenario["description"], str)
+            or not scenario["description"].strip()
+            or not isinstance(scenario["expected"], str)
+            or not scenario["expected"].strip()
+            or scenario["origin"] != "user"
+            or not isinstance(scenario["reviews"], list)
+        ):
+            raise ValueError("Invalid scenario or provenance.")
+        scenario_ids.add(scenario_id)
+        for review in scenario["reviews"]:
+            if (
+                not isinstance(review, dict)
+                or set(review) != {"assessment", "reason", "origin", "reference"}
+                or review["assessment"] not in ASSESSMENTS
+                or not isinstance(review["reason"], str)
+                or not review["reason"].strip()
+                or review["origin"] != "user"
+                or (review["assessment"] == "reference_found" and review["reference"] is None)
+                or (
+                    review["reference"] is not None
+                    and not valid_reference(review["reference"], references_by_path)
+                )
+            ):
+                raise ValueError("Invalid scenario review or reference.")
 
 
 def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
@@ -363,6 +419,9 @@ def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
     if state["schema_version"] == 6:
         state["schema_version"] = 7
         state["conflicts"] = []
+    if state["schema_version"] == 7:
+        state["schema_version"] = 8
+        state["scenarios"] = []
     return state, hashlib.sha256(raw).hexdigest()
 
 

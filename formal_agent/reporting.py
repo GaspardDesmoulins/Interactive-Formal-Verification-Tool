@@ -28,6 +28,7 @@ def render_report(state: dict[str, Any]) -> str:
         "- No target code was executed; methods and nested function bodies are not analyzed.",
         "- No verification engine or tests of the target were run.",
         "- Accepted properties are specifications, not proofs.",
+        "- Scenario assessments and citations do not establish coverage or gaps.",
         "- LLM context completeness is not independently verified; servers may truncate inputs.",
         "",
         f"Module imports ({len(model.get('imports', []))})",
@@ -112,6 +113,26 @@ def render_report(state: dict[str, Any]) -> str:
             f"  Origin: user; source answer: {quote(assumption['source_unknown_id'])}; "
             f"property: {assumption['property_id']}; verification: not performed"
         )
+    lines.extend(["", f"Candidate scenarios ({len(state['scenarios'])})"])
+    for scenario in state["scenarios"]:
+        reviews = scenario["reviews"]
+        status = f"user assessment: {reviews[-1]['assessment']}" if reviews else "not assessed"
+        lines.append(f"- {scenario['id']} [{status}] {quote(scenario['description'])}")
+        lines.append(
+            f"  Origin: user; property: {scenario['property_id']}; "
+            f"expected: {quote(scenario['expected'])}"
+        )
+        for index, review in enumerate(reviews, 1):
+            lines.append(
+                f"  Review {index}: {review['assessment']}; user reason: "
+                f"{quote(review['reason'])}; not verified"
+            )
+            reference = review["reference"]
+            if reference is not None:
+                lines.append(
+                    f"    User-cited reference: {quote(reference['path'])}:{reference['line']}; "
+                    f"SHA-256: {quote(reference['sha256'])}; relevance not verified"
+                )
     lines.extend(["", f"Disagreements ({len(state['conflicts'])})"])
     for conflict in state["conflicts"]:
         lines.append(

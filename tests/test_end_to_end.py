@@ -118,6 +118,13 @@ class EndToEndTests(unittest.TestCase):
             success("mark-duplicate", str(state), repeated_id, unknown_id, "--reason", "reviewed")
             success("add-assumption", str(state), unknown_id, "P1", "--statement", "amount > 0")
             success("accept-property", str(state), "P1")
+            success("add-scenario", str(state), "P1",
+                    "--description", "Amount is zero", "--expected", "Reject the amount")
+            success("review-scenario", str(state), "S1", "--assessment", "potential_gap",
+                    "--reason", "No case found in the references")
+            success("review-scenario", str(state), "S1", "--assessment", "reference_found",
+                    "--reason", "Requirement may be relevant", "--reference", str(evidence),
+                    "--line", "1")
             success("record-conflict", str(state), unknown_id, "--description", "Sources differ.")
             success("resolve-conflict", str(state), "C1", "--resolution", "Requirements prevail.")
             success("finish", str(state), "--allow-open")
@@ -127,6 +134,10 @@ class EndToEndTests(unittest.TestCase):
             self.assertIn("Reference files (1)", report)
             self.assertIn("A1 [assumed]", report)
             self.assertIn("C1 [resolved]", report)
+            self.assertIn("S1 [user assessment: reference_found]", report)
+            self.assertIn("Review 1: potential_gap", report)
+            self.assertIn("Review 2: reference_found", report)
+            self.assertIn("relevance not verified", report)
             self.assertIn(f'User-marked duplicate of: "{unknown_id}"', report)
             self.assertIn("verification: not performed", report)
             self.assertIn("Verification results: none", report)
