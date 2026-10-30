@@ -81,9 +81,10 @@ class DuplicateTests(unittest.TestCase):
     def test_corrupted_duplicate_and_old_schema_migration(self) -> None:
         state = load(self.state)
         state["schema_version"] = 5
+        del state["conflicts"]
         self.state.write_text(json.dumps(state), encoding="utf-8")
         original = self.state.read_bytes()
-        self.assertEqual(load(self.state)["schema_version"], 6)
+        self.assertEqual(load(self.state)["schema_version"], 7)
         self.assertEqual(self.state.read_bytes(), original)
         self.assertEqual(self.cli(
             "mark-duplicate", str(self.state), "U3", "U2", "--reason", "same"

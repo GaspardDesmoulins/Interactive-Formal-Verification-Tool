@@ -22,7 +22,7 @@ def validate(state: Any) -> None:
     if (
         not isinstance(state, dict)
         or type(state.get("schema_version")) is not int
-        or state["schema_version"] not in (1, 2, 3, 4, 5, 6)
+        or state["schema_version"] not in (1, 2, 3, 4, 5, 6, 7)
     ):
         raise ValueError("Invalid or unsupported investigation schema.")
     model = state.get("model")
@@ -283,6 +283,41 @@ def validate(state: Any) -> None:
         )
     ):
         raise ValueError("Invalid investigation workflow.")
+    if state["schema_version"] < 7:
+        if "conflicts" in state:
+            raise ValueError("Legacy schema must not contain disagreements.")
+        return
+    conflicts = state.get("conflicts")
+    if not isinstance(conflicts, list):
+        raise ValueError("Invalid disagreements.")
+    conflict_ids = set()
+    for conflict in conflicts:
+        if not isinstance(conflict, dict):
+            raise ValueError("Invalid disagreement.")
+        conflict_id = conflict.get("id")
+        unknown_id = conflict.get("unknown_id")
+        description = conflict.get("description")
+        status = conflict.get("status")
+        resolution = conflict.get("resolution")
+        if (
+            not isinstance(conflict_id, str)
+            or not conflict_id.startswith("C")
+            or not conflict_id[1:].isascii()
+            or not conflict_id[1:].isdigit()
+            or int(conflict_id[1:]) < 1
+            or str(int(conflict_id[1:])) != conflict_id[1:]
+            or conflict_id in conflict_ids
+            or not isinstance(unknown_id, str)
+            or unknown_id not in unknowns_by_id
+            or not isinstance(description, str)
+            or not description.strip()
+            or conflict.get("origin") != "user"
+            or status not in ("open", "resolved")
+            or (status == "open" and resolution is not None)
+            or (status == "resolved" and (not isinstance(resolution, str) or not resolution.strip()))
+        ):
+            raise ValueError("Invalid disagreement.")
+        conflict_ids.add(conflict_id)
 
 
 def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
@@ -306,6 +341,9 @@ def load_snapshot(path: Path) -> tuple[dict[str, Any], str]:
         state["workflow"] = {"phase": "active", "pending_unknown_id": None}
     if state["schema_version"] == 5:
         state["schema_version"] = 6
+    if state["schema_version"] == 6:
+        state["schema_version"] = 7
+        state["conflicts"] = []
     return state, hashlib.sha256(raw).hexdigest()
 
 

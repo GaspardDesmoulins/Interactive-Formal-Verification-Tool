@@ -7,6 +7,7 @@ from pathlib import Path
 
 from formal_agent.analysis import analyze
 from formal_agent.assumptions import add_assumption, link_property
+from formal_agent.conflicts import record_conflict, resolve_conflict
 from formal_agent.duplicates import mark_duplicate, reopen_duplicate
 from formal_agent.evidence import capture_evidence, discover_evidence, reference_at_line
 from formal_agent.investigation import create_investigation, resolve_unknown, source_warning
@@ -52,6 +53,14 @@ def main(argv: list[str] | None = None) -> int:
     reopen = commands.add_parser("reopen-unknown", help="Undo a duplicate question decision")
     reopen.add_argument("state", type=Path)
     reopen.add_argument("unknown_id")
+    conflict = commands.add_parser("record-conflict", help="Record a disagreement")
+    conflict.add_argument("state", type=Path)
+    conflict.add_argument("unknown_id")
+    conflict.add_argument("--description", required=True, help="Describe the disagreement")
+    resolve = commands.add_parser("resolve-conflict", help="Record a disagreement decision")
+    resolve.add_argument("state", type=Path)
+    resolve.add_argument("conflict_id")
+    resolve.add_argument("--resolution", required=True, help="Describe the user decision")
     answer = commands.add_parser("answer", help="Answer an open question")
     answer.add_argument("state", type=Path)
     answer.add_argument("unknown_id")
@@ -138,8 +147,11 @@ def main(argv: list[str] | None = None) -> int:
                     f"{json.dumps(unknown['question'], ensure_ascii=False)}"
                 )
             elif args.command == "finish":
-                count = finish(state, args.allow_open)
-                message = f"Investigation finished; {count} questions remain open."
+                counts = finish(state, args.allow_open)
+                message = (
+                    f"Investigation finished; {counts[0]} questions and "
+                    f"{counts[1]} disagreements remain open."
+                )
             elif args.command == "resume":
                 resume(state)
                 message = "Investigation resumed."
@@ -151,6 +163,14 @@ def main(argv: list[str] | None = None) -> int:
                 require_active(state)
                 reopen_duplicate(state, args.unknown_id)
                 message = f"Reopened {args.unknown_id}."
+            elif args.command == "record-conflict":
+                require_active(state)
+                conflict_id = record_conflict(state, args.unknown_id, args.description)
+                message = f"Recorded disagreement {conflict_id}."
+            elif args.command == "resolve-conflict":
+                require_active(state)
+                resolve_conflict(state, args.conflict_id, args.resolution)
+                message = f"Recorded decision for disagreement {args.conflict_id}."
             elif args.command == "add-property":
                 require_active(state)
                 property_id = add_property(state, args.unknown_id, args.statement)

@@ -111,5 +111,13 @@ def render_report(state: dict[str, Any]) -> str:
             f"  Origin: user; source answer: {quote(assumption['source_unknown_id'])}; "
             f"property: {assumption['property_id']}; verification: not performed"
         )
+    lines.extend(["", f"Disagreements ({len(state['conflicts'])})"])
+    for conflict in state["conflicts"]:
+        lines.append(
+            f"- {conflict['id']} [{conflict['status']}] {quote(conflict['description'])}"
+        )
+        lines.append(f"  Origin: user; unknown: {quote(conflict['unknown_id'])}")
+        if conflict["status"] == "resolved":
+            lines.append(f"  User decision: {quote(conflict['resolution'])}; not verified")
     lines.extend(["", "Verification results: none", ""])
     return "\n".join(lines)

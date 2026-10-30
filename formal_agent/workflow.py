@@ -43,13 +43,17 @@ def answer_recorded(state: dict[str, Any]) -> None:
     state["workflow"] = {"phase": "active", "pending_unknown_id": None}
 
 
-def finish(state: dict[str, Any], allow_open: bool) -> int:
+def finish(state: dict[str, Any], allow_open: bool) -> tuple[int, int]:
     require_active(state)
     open_count = sum(item["status"] == "open" for item in state["unknowns"])
-    if open_count and not allow_open:
-        raise ValueError(f"{open_count} questions remain open; use --allow-open to finish.")
+    conflict_count = sum(item["status"] == "open" for item in state["conflicts"])
+    if (open_count or conflict_count) and not allow_open:
+        raise ValueError(
+            f"{open_count} questions and {conflict_count} disagreements remain open; "
+            "use --allow-open to finish."
+        )
     state["workflow"] = {"phase": "finished", "pending_unknown_id": None}
-    return open_count
+    return open_count, conflict_count
 
 
 def resume(state: dict[str, Any]) -> None:

@@ -34,6 +34,7 @@ def apply_proposals(
         "properties": state["properties"],
         "links": state["links"],
         "assumptions": state["assumptions"],
+        "conflicts": state["conflicts"],
     })
     result = provider.propose(model)
     if not isinstance(result, dict) or set(result) != {"source_sha256", "properties", "unknowns"}:

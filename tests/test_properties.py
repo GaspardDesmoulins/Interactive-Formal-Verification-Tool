@@ -95,14 +95,15 @@ class PropertyTests(unittest.TestCase):
         del state["links"]
         del state["assumptions"]
         del state["workflow"]
+        del state["conflicts"]
         self.state.write_text(json.dumps(state), encoding="utf-8")
         original = self.state.read_bytes()
         result, output, _ = self.run_cli("show", str(self.state))
         self.assertEqual(result, 0)
-        self.assertEqual(json.loads(output)["schema_version"], 6)
+        self.assertEqual(json.loads(output)["schema_version"], 7)
         self.assertEqual(self.state.read_bytes(), original)
         self.answer()
-        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8"))["schema_version"], 6)
+        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8"))["schema_version"], 7)
 
     def test_invalid_property_provenance_is_rejected(self) -> None:
         self.answer()
